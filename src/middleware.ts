@@ -8,7 +8,8 @@ export async function middleware(request: NextRequest) {
     },
   });
 
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
+  const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY;
 
   // หากยังไม่ได้ตั้งค่า Supabase ให้ข้าม middleware เพื่อให้ dev ใช้งานดูหน้า UI ได้สะดวก

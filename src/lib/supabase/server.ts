@@ -4,7 +4,8 @@ import { isSupabaseConfigured } from './client';
 
 export const createServerSupabaseClient = () => {
   const cookieStore = cookies();
-  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || 'https://placeholder.supabase.co';
+  const supabaseUrl = rawUrl.replace(/\/rest\/v1\/?$/, '').replace(/\/+$/, '');
   const supabaseAnonKey = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY || 'placeholder-key';
 
   return createServerClient(supabaseUrl, supabaseAnonKey, {
