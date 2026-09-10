@@ -4,7 +4,6 @@ import Link from 'next/link';
 import { usePathname, useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { ShoppingBag, LogOut } from 'lucide-react';
-import BerryIcon from '@/components/BerryIcon';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 export default function Navbar() {
@@ -45,16 +44,17 @@ export default function Navbar() {
       <div className="mx-auto flex h-16 max-w-7xl items-center justify-between px-4 sm:px-6 lg:px-8">
         
         {/* Brand Logo */}
-        <Link href="/" className="flex items-center gap-2.5 group">
-          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-slate-900 text-white shadow-sm transition-transform group-hover:scale-105">
-            <BerryIcon className="h-5 w-5 shrink-0" />
-          </div>
-          <div className="flex items-baseline">
-            <span className="text-xl font-bold tracking-tight">
-              <span className="text-purple-600">Berry</span>
-              <span className="text-pink-500">pink</span>
+        <Link href="/" className="flex items-center gap-2.5 group py-1">
+          <img
+            src="/logo.jpg"
+            alt="Berrypink Logo"
+            className="h-10 sm:h-12 w-auto object-contain rounded-xl shadow-xs transition-transform duration-200 group-hover:scale-105"
+          />
+          {isAdminRoute && (
+            <span className="rounded-lg bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-700 shadow-xs">
+              Admin
             </span>
-          </div>
+          )}
         </Link>
 
         {/* Action Button: ติดต่อสั่งซื้อผ่าน Facebook (แสดงในหน้าหลัก) */}

@@ -22,6 +22,11 @@ export const metadata: Metadata = {
     'ชุดเซ็ตซิลวาเนียน',
     'เสื้อผ้าซิลวาเนียน',
   ],
+  icons: {
+    icon: '/logo.jpg',
+    shortcut: '/logo.jpg',
+    apple: '/logo.jpg',
+  },
   openGraph: {
     type: 'website',
     locale: 'th_TH',
@@ -32,10 +37,10 @@ export const metadata: Metadata = {
       'พื้นที่สำหรับคนรักของเล่น คัดสรรความน่ารักทั้งของแท้มือหนึ่งและมือสองสภาพสวย Sylvanian Families ของจิ๋ว ชุดเซ็ต บ้าน เสื้อผ้า พร้อมบริการรับซื้อ-รับขาย สั่งซื้อง่ายๆ ทักแชทได้ทันที',
     images: [
       {
-        url: 'https://images.unsplash.com/photo-1558877385-81a1c7e67d72?q=80&w=1200&auto=format&fit=crop',
-        width: 1200,
-        height: 630,
-        alt: 'Berrypink Toy & Sylvanian Families Store',
+        url: 'https://berrypink-showcase.vercel.app/logo.jpg',
+        width: 1024,
+        height: 434,
+        alt: 'Berrypink - อาณาจักรของเล่น & Sylvanian Families',
       },
     ],
   },
@@ -44,7 +49,7 @@ export const metadata: Metadata = {
     title: 'Berrypink | อาณาจักรของเล่น & Sylvanian Families ทั้งมือ 1 และมือ 2',
     description:
       'พื้นที่สำหรับคนรักของเล่น คัดสรรความน่ารักทั้งของแท้มือหนึ่งและมือสองสภาพสวย Sylvanian Families ของจิ๋ว ชุดเซ็ต บ้าน เสื้อผ้า พร้อมบริการรับซื้อ-รับขาย สั่งซื้อง่ายๆ ทักแชทได้ทันที',
-    images: ['https://images.unsplash.com/photo-1558877385-81a1c7e67d72?q=80&w=1200&auto=format&fit=crop'],
+    images: ['https://berrypink-showcase.vercel.app/logo.jpg'],
   },
   robots: {
     index: true,
