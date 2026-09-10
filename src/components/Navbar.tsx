@@ -48,10 +48,16 @@ export default function Navbar() {
           <img
             src="/logo.jpg"
             alt="Berrypink Logo"
-            className="h-10 sm:h-12 w-auto object-contain rounded-xl shadow-xs transition-transform duration-200 group-hover:scale-105"
+            className="h-9 sm:h-10 w-auto object-contain rounded-xl shadow-xs transition-transform duration-200 group-hover:scale-105"
           />
+          <div className="flex items-baseline">
+            <span className="text-xl font-bold tracking-tight">
+              <span className="text-purple-600">Berry</span>
+              <span className="text-pink-500">pink</span>
+            </span>
+          </div>
           {isAdminRoute && (
-            <span className="rounded-lg bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-700 shadow-xs">
+            <span className="rounded-lg bg-purple-100 px-2.5 py-1 text-xs font-bold text-purple-700 shadow-xs ml-1">
               Admin
             </span>
           )}
