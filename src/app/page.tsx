@@ -84,7 +84,9 @@ export default function HomePage() {
     return products.filter((product) => {
       const matchesSearch =
         product.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (product.description && product.description.toLowerCase().includes(searchQuery.toLowerCase()));
+        (product.description && product.description.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (product.condition && product.condition.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (product.size_category && product.size_category.toLowerCase().includes(searchQuery.toLowerCase()));
 
       const matchesCategory =
         selectedCategory === 'ทั้งหมด' || product.category === selectedCategory;

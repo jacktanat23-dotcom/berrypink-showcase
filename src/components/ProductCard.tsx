@@ -62,6 +62,29 @@ export default function ProductCard({ product, onSelect }: ProductCardProps) {
           {product.name}
         </h3>
 
+        {/* Badges: สภาพสินค้า & ขนาด/รุ่น */}
+        {(product.condition || product.size_category) && (
+          <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            {product.condition && (
+              <span
+                className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium border ${
+                  product.condition === 'มือ 1'
+                    ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
+                    : 'bg-amber-50 text-amber-700 border-amber-200/70'
+                }`}
+              >
+                {product.condition}
+              </span>
+            )}
+
+            {product.size_category && (
+              <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 border border-purple-200/70">
+                {product.size_category}
+              </span>
+            )}
+          </div>
+        )}
+
         <p className="mt-2 text-sm leading-relaxed text-slate-500 line-clamp-2">
           {product.description || 'ไม่มีคำอธิบายรายละเอียดเพิ่มเติมสำหรับสินค้านี้'}
         </p>

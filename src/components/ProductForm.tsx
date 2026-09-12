@@ -5,7 +5,7 @@ import Image from 'next/image';
 import { useRouter } from 'next/navigation';
 import { UploadCloud, X, ArrowLeft, Loader2, Image as ImageIcon, AlertCircle } from 'lucide-react';
 import Link from 'next/link';
-import { Product, ProductFormData, PRODUCT_CATEGORIES } from '@/lib/types';
+import { Product, ProductFormData, PRODUCT_CATEGORIES, PRODUCT_CONDITIONS, PRODUCT_SIZES } from '@/lib/types';
 import { uploadProductImage, deleteProductImage } from '@/lib/supabase/storage';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
@@ -22,6 +22,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
     description: initialData?.description || '',
     price: initialData?.price ? String(initialData.price) : '',
     category: initialData?.category || PRODUCT_CATEGORIES[0],
+    condition: initialData?.condition || PRODUCT_CONDITIONS[0],
+    size_category: initialData?.size_category || '',
     is_active: initialData ? initialData.is_active : true,
     image_url: initialData?.image_url || null,
   });
@@ -110,6 +112,8 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
         description: formData.description.trim() || null,
         price: numericPrice,
         category: formData.category,
+        condition: formData.condition || 'มือ 1',
+        size_category: formData.size_category || null,
         image_url: finalImageUrl,
         is_active: formData.is_active,
         updated_at: new Date().toISOString(),
@@ -300,6 +304,45 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                 className="w-full rounded-xl border border-slate-200 pl-9 pr-4 py-3 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-indigo-600 focus:ring-4 focus:ring-indigo-50"
               />
             </div>
+          </div>
+
+          {/* สภาพสินค้า (Condition) */}
+          <div>
+            <label htmlFor="condition" className="block text-sm font-semibold text-slate-900 mb-2">
+              สภาพสินค้า (Condition)
+            </label>
+            <select
+              id="condition"
+              value={formData.condition}
+              onChange={(e) => setFormData({ ...formData, condition: e.target.value })}
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-indigo-600 focus:ring-4 focus:ring-indigo-50 bg-white"
+            >
+              {PRODUCT_CONDITIONS.map((cond) => (
+                <option key={cond} value={cond}>
+                  {cond}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          {/* ขนาด/รุ่น (Size Category) */}
+          <div>
+            <label htmlFor="size_category" className="block text-sm font-semibold text-slate-900 mb-2">
+              ขนาด/รุ่น (Size Category)
+            </label>
+            <select
+              id="size_category"
+              value={formData.size_category}
+              onChange={(e) => setFormData({ ...formData, size_category: e.target.value })}
+              className="w-full rounded-xl border border-slate-200 px-4 py-3 text-sm text-slate-900 outline-none transition-all focus:border-indigo-600 focus:ring-4 focus:ring-indigo-50 bg-white"
+            >
+              <option value="">-- ไม่ระบุขนาด / ทั่วไป --</option>
+              {PRODUCT_SIZES.map((size) => (
+                <option key={size} value={size}>
+                  {size}
+                </option>
+              ))}
+            </select>
           </div>
 
           {/* Description */}

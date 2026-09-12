@@ -111,7 +111,9 @@ export default function AdminDashboardPage() {
   const filteredProducts = useMemo(() => {
     return products.filter((p) =>
       p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.category && p.category.toLowerCase().includes(searchQuery.toLowerCase()))
+      (p.category && p.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (p.condition && p.condition.toLowerCase().includes(searchQuery.toLowerCase())) ||
+      (p.size_category && p.size_category.toLowerCase().includes(searchQuery.toLowerCase()))
     );
   }, [products, searchQuery]);
 
@@ -281,6 +283,26 @@ export default function AdminDashboardPage() {
                     {/* Product Name */}
                     <td className="px-6 py-4">
                       <div className="font-semibold text-slate-900 line-clamp-1">{product.name}</div>
+                      {(product.condition || product.size_category) && (
+                        <div className="flex items-center gap-1.5 mt-1">
+                          {product.condition && (
+                            <span
+                              className={`inline-flex items-center rounded px-1.5 py-0.5 text-[10px] font-medium border ${
+                                product.condition === 'มือ 1'
+                                  ? 'bg-emerald-50 text-emerald-700 border-emerald-200/60'
+                                  : 'bg-amber-50 text-amber-700 border-amber-200/60'
+                              }`}
+                            >
+                              {product.condition}
+                            </span>
+                          )}
+                          {product.size_category && (
+                            <span className="inline-flex items-center rounded bg-purple-50 px-1.5 py-0.5 text-[10px] font-medium text-purple-700 border border-purple-200/60">
+                              {product.size_category}
+                            </span>
+                          )}
+                        </div>
+                      )}
                       <div className="text-xs text-slate-400 line-clamp-1 mt-0.5">
                         {product.description || '-'}
                       </div>
