@@ -11,6 +11,7 @@ import {
   Eye,
   Package,
   Boxes,
+  Users,
   CheckCircle,
   AlertCircle,
   Tag,
@@ -178,6 +179,14 @@ export default function AdminDashboardPage() {
         >
           <Package className="h-4 w-4" />
           <span>จัดการเลขพัสดุ</span>
+        </Link>
+
+        <Link
+          href="/admin/users"
+          className="flex items-center gap-2 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-slate-500 hover:border-slate-300 hover:text-slate-800 transition-all"
+        >
+          <Users className="h-4 w-4" />
+          <span>จัดการผู้ใช้งาน</span>
         </Link>
       </div>
 

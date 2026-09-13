@@ -48,16 +48,44 @@ export async function middleware(request: NextRequest) {
   const isAuthPage = request.nextUrl.pathname.startsWith('/admin/login');
   const isAdminPage = request.nextUrl.pathname.startsWith('/admin') && !isAuthPage;
 
-  // ถ้ายังไม่ล็อกอินแล้วพยายามเข้าหน้า Admin ให้ Redirect ไปหน้า Login
+  // 1. ถ้ายังไม่ล็อกอินแล้วพยายามเข้าหน้า Admin ให้ Redirect ไปหน้า Login
   if (isAdminPage && !session) {
     const redirectUrl = new URL('/admin/login', request.url);
     redirectUrl.searchParams.set('redirectTo', request.nextUrl.pathname);
     return NextResponse.redirect(redirectUrl);
   }
 
-  // ถ้าล็อกอินแล้วและเปิดหน้า Login ให้ Redirect เข้า Dashboard Admin
-  if (isAuthPage && session) {
-    return NextResponse.redirect(new URL('/admin', request.url));
+  // 2. ถ้าล็อกอินแล้ว ให้ตรวจสอบ Role ในตาราง profiles
+  if (session) {
+    const { data: profile, error } = await supabase
+      .from('profiles')
+      .select('role')
+      .eq('id', session.user.id)
+      .single();
+
+    // ถ้าตาราง profiles มีอยู่แล้ว ให้ตรวจสอบสิทธิ์ role อย่างเข้มงวด
+    if (!error && profile) {
+      const isAdmin = profile.role === 'admin';
+
+      // หากผู้ใช้มีสิทธิ์ 'user' พยายามเข้าหน้า Admin ให้ปฏิเสธการเข้าถึงและ Redirect กลับหน้าหลักทันที
+      if (isAdminPage && !isAdmin) {
+        const homeUrl = new URL('/', request.url);
+        homeUrl.searchParams.set('auth_error', 'unauthorized_admin');
+        return NextResponse.redirect(homeUrl);
+      }
+
+      // หากเป็น Admin และเปิดหน้า Login ให้ข้ามไปที่ Dashboard
+      if (isAuthPage && isAdmin) {
+        return NextResponse.redirect(new URL('/admin', request.url));
+      }
+    } else if (!error && !profile) {
+      // มี session แต่ไม่พบ profile หรือ role ไม่ใช่ admin
+      if (isAdminPage) {
+        const homeUrl = new URL('/', request.url);
+        homeUrl.searchParams.set('auth_error', 'unauthorized_admin');
+        return NextResponse.redirect(homeUrl);
+      }
+    }
   }
 
   return response;
