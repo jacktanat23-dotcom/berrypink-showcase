@@ -40,36 +40,8 @@ export default function TrackingPage() {
   const [searchQuery, setSearchQuery] = useState('');
   const [hasSearched, setHasSearched] = useState(false);
   const [results, setResults] = useState<Shipment[]>([]);
-  const [recentShipments, setRecentShipments] = useState<Shipment[]>([]);
   const [loading, setLoading] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
-
-  // โหลดรายการจัดส่งล่าสุดมาแสดงเป็นตัวอย่างรอบส่ง
-  useEffect(() => {
-    async function loadRecent() {
-      if (!isSupabaseConfigured()) {
-        setRecentShipments(MOCK_SHIPMENTS.slice(0, 5));
-        return;
-      }
-      try {
-        const supabase = createClient();
-        const { data, error } = await supabase
-          .from('shipments')
-          .select('*')
-          .order('shipping_date', { ascending: false })
-          .limit(6);
-
-        if (error || !data || data.length === 0) {
-          setRecentShipments(MOCK_SHIPMENTS.slice(0, 5));
-        } else {
-          setRecentShipments(data);
-        }
-      } catch (e) {
-        setRecentShipments(MOCK_SHIPMENTS.slice(0, 5));
-      }
-    }
-    loadRecent();
-  }, []);
 
   const handleSearch = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
@@ -393,54 +365,6 @@ export default function TrackingPage() {
                 </div>
               </div>
             </div>
-
-            {/* Recent Shipments Preview */}
-            {recentShipments.length > 0 && (
-              <div>
-                <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-bold uppercase tracking-wider text-slate-500 flex items-center gap-1.5">
-                    <Truck className="h-4 w-4 text-purple-500" />
-                    <span>ตัวอย่างรอบส่งล่าสุดของทางร้าน</span>
-                  </h3>
-                </div>
-
-                <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-sm divide-y divide-slate-100">
-                  {recentShipments.map((s) => (
-                    <div
-                      key={s.id}
-                      className="flex flex-col sm:flex-row sm:items-center justify-between p-4 gap-2 hover:bg-slate-50/60 transition-colors"
-                    >
-                      <div className="flex items-center gap-3">
-                        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-lg bg-slate-100 text-slate-600">
-                          <Package className="h-4 w-4" />
-                        </div>
-                        <div>
-                          <div className="text-sm font-semibold text-slate-900 block">
-                            <MaskedCustomerName name={s.customer_name} />
-                          </div>
-                          <span className="text-xs text-slate-400">
-                            รอบส่ง {formatThaiDate(s.shipping_date)}
-                          </span>
-                        </div>
-                      </div>
-
-                      <div className="flex items-center gap-2 text-xs">
-                        <span
-                          className={`rounded-md px-2 py-0.5 font-medium border ${getCarrierBadgeColor(
-                            s.carrier
-                          )}`}
-                        >
-                          {s.carrier}
-                        </span>
-                        <span className="font-mono text-slate-700 bg-slate-100 px-2 py-0.5 rounded">
-                          {s.tracking_number}
-                        </span>
-                      </div>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
           </div>
         )}
       </main>
