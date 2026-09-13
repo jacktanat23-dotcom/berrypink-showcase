@@ -100,3 +100,43 @@ export function getCarrierTrackingUrl(carrier: string, trackingNumber: string): 
   }
   return null;
 }
+
+/**
+ * ฟังก์ชันช่วยเบลอ/ซ่อนชื่อลูกค้า ให้เห็นเฉพาะ 3 พยัญชนะแรก (เช่น ชลธิชา มั่นคง -> ชลธิ***)
+ * เพื่อความเป็นส่วนตัวและความปลอดภัยตามหลัก PDPA
+ */
+export function maskCustomerName(name: string): string {
+  if (!name) return '';
+  let trimmed = name.trim();
+  let prefix = '';
+  if (trimmed.startsWith('คุณ')) {
+    prefix = 'คุณ ';
+    trimmed = trimmed.replace(/^คุณ\s*/, '');
+  }
+
+  let consonantCount = 0;
+  let cutoff = 0;
+
+  for (let i = 0; i < trimmed.length; i++) {
+    const char = trimmed[i];
+    // ตรวจสอบพยัญชนะไทย (ก-ฮ) หรือตัวอักษรภาษาอังกฤษ (A-Z)
+    if (/[ก-ฮa-zA-Z]/.test(char)) {
+      consonantCount++;
+    }
+    cutoff = i + 1;
+
+    // เมื่อครบ 3 พยัญชนะ ให้เก็บสระ/วรรณยุกต์ด้านบนหรือด้านล่างที่ติดอยู่กับพยัญชนะตัวที่ 3 ด้วย
+    if (consonantCount === 3) {
+      while (
+        cutoff < trimmed.length &&
+        /[\u0E31\u0E34-\u0E3A\u0E47-\u0E4E]/.test(trimmed[cutoff])
+      ) {
+        cutoff++;
+      }
+      break;
+    }
+  }
+
+  const visiblePart = trimmed.slice(0, cutoff);
+  return `${prefix}${visiblePart}***`;
+}

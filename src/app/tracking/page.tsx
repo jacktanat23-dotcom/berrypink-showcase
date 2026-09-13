@@ -16,9 +16,25 @@ import {
   MessageCircle,
   HelpCircle,
 } from 'lucide-react';
-import { Shipment, getCarrierTrackingUrl } from '@/lib/types';
+import { Shipment, getCarrierTrackingUrl, maskCustomerName } from '@/lib/types';
 import { MOCK_SHIPMENTS } from '@/lib/mock-data';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+
+function MaskedCustomerName({ name }: { name: string }) {
+  if (!name) return null;
+  const masked = maskCustomerName(name);
+  const parts = masked.split('***');
+  const visible = parts[0];
+
+  return (
+    <span className="inline-flex items-baseline font-bold text-slate-900">
+      <span>{visible}</span>
+      <span className="text-purple-400 font-extrabold tracking-widest ml-0.5 select-none">
+        ***
+      </span>
+    </span>
+  );
+}
 
 export default function TrackingPage() {
   const [searchQuery, setSearchQuery] = useState('');
@@ -237,9 +253,9 @@ export default function TrackingPage() {
                         {/* Customer & Date */}
                         <div>
                           <div className="flex flex-wrap items-center gap-2">
-                            <span className="text-lg font-bold text-slate-900">
-                              {shipment.customer_name}
-                            </span>
+                            <div className="text-lg font-bold text-slate-900">
+                              <MaskedCustomerName name={shipment.customer_name} />
+                            </div>
                             <span
                               className={`rounded-lg px-2.5 py-0.5 text-xs font-semibold border ${getCarrierBadgeColor(
                                 shipment.carrier
@@ -399,9 +415,9 @@ export default function TrackingPage() {
                           <Package className="h-4 w-4" />
                         </div>
                         <div>
-                          <span className="text-sm font-semibold text-slate-900 block">
-                            {s.customer_name}
-                          </span>
+                          <div className="text-sm font-semibold text-slate-900 block">
+                            <MaskedCustomerName name={s.customer_name} />
+                          </div>
                           <span className="text-xs text-slate-400">
                             รอบส่ง {formatThaiDate(s.shipping_date)}
                           </span>
