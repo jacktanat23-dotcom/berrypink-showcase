@@ -84,6 +84,14 @@ export default function AdminUsersPage() {
 
   // ฟังก์ชันอัปเดตสิทธิ์ (Promote / Demote)
   const handleUpdateRole = async (targetProfile: UserProfile, newRole: UserRole) => {
+    if (targetProfile.id === currentAdminId && newRole === 'user') {
+      setFeedback({
+        type: 'error',
+        message: 'ไม่อนุญาตให้ลดระดับสิทธิ์บัญชีของตัวเอง เพื่อป้องกันการถูกล็อคออกจากระบบหลังบ้าน',
+      });
+      return;
+    }
+
     setActionLoadingId(targetProfile.id);
     setConfirmModal(null);
 
@@ -453,6 +461,14 @@ export default function AdminUsersPage() {
                             <span className="inline-flex items-center gap-1 text-xs text-purple-600 font-medium">
                               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
                               กำลังบันทึก...
+                            </span>
+                          ) : isSelf ? (
+                            <span
+                              className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed border border-slate-200"
+                              title="ไม่สามารถลดระดับสิทธิ์บัญชีของตัวเองได้ เพื่อป้องกันระบบถูกล็อค"
+                            >
+                              <Lock className="h-3.5 w-3.5 text-slate-400" />
+                              <span>บัญชีของคุณ</span>
                             </span>
                           ) : isAdmin ? (
                             <button
