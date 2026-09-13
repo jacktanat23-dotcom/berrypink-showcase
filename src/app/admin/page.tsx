@@ -133,34 +133,52 @@ export default function AdminDashboardPage() {
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       {/* Top Header */}
-      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-8">
+      <div className="flex flex-col gap-4 sm:flex-row sm:items-center sm:justify-between mb-6">
         <div>
           <h1 className="text-2xl sm:text-3xl font-bold tracking-tight text-slate-900">
-            ระบบจัดการสินค้า (Admin Dashboard)
+            ระบบจัดการร้าน (Admin Dashboard)
           </h1>
           <p className="mt-1 text-sm text-slate-500">
             จัดการรายการสินค้า ตรวจสอบสต็อก และอัปเดตข้อมูลบนหน้าโชว์รูม
           </p>
         </div>
 
-        <div className="flex items-center gap-3">
+        <div className="flex items-center gap-2.5">
           <Link
-            href="/"
-            target="_blank"
-            className="inline-flex items-center gap-1.5 rounded-xl border border-slate-200 bg-white px-4 py-2.5 text-xs font-semibold text-slate-700 shadow-sm hover:bg-slate-50 transition-colors"
+            href="/admin/tracking"
+            className="inline-flex items-center gap-1.5 rounded-xl border border-purple-200 bg-purple-50 px-4 py-2.5 text-xs sm:text-sm font-semibold text-purple-700 hover:bg-purple-100 transition-colors shadow-2xs"
           >
-            <ExternalLink className="h-3.5 w-3.5" />
-            เปิดดูหน้าบ้าน
+            <Package className="h-4 w-4 text-purple-600" />
+            <span>จัดการเลขพัสดุ</span>
           </Link>
 
           <Link
             href="/admin/products/new"
-            className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:bg-indigo-700 transition-colors"
+            className="inline-flex items-center gap-2 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 px-5 py-2.5 text-sm font-semibold text-white shadow-sm hover:from-purple-700 hover:to-pink-600 transition-all"
           >
             <Plus className="h-4 w-4 stroke-[2.5]" />
             เพิ่มสินค้าใหม่
           </Link>
         </div>
+      </div>
+
+      {/* Navigation Tabs */}
+      <div className="flex items-center gap-4 border-b border-slate-200 mb-8">
+        <Link
+          href="/admin"
+          className="flex items-center gap-2 border-b-2 border-purple-600 px-3 py-2.5 text-sm font-bold text-purple-600"
+        >
+          <Boxes className="h-4 w-4 text-purple-600" />
+          <span>จัดการสินค้าในร้าน ({totalCount})</span>
+        </Link>
+
+        <Link
+          href="/admin/tracking"
+          className="flex items-center gap-2 border-b-2 border-transparent px-3 py-2.5 text-sm font-medium text-slate-500 hover:border-slate-300 hover:text-slate-800 transition-all"
+        >
+          <Package className="h-4 w-4" />
+          <span>จัดการเลขพัสดุ</span>
+        </Link>
       </div>
 
       {/* Feedback Toast */}

@@ -1,4 +1,4 @@
-import { Product } from './types';
+import { Product, Shipment } from './types';
 
 export const MOCK_PRODUCTS: Product[] = [
   {
@@ -65,5 +65,44 @@ export const MOCK_PRODUCTS: Product[] = [
     is_active: true,
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
+  },
+];
+
+export const MOCK_SHIPMENTS: Shipment[] = [
+  {
+    id: 'ship-1',
+    customer_name: 'ชลธิชา มั่นคง',
+    shipping_date: new Date().toISOString().split('T')[0],
+    carrier: 'Flash Express',
+    tracking_number: 'TH01495829482A',
+    note: 'ชุดเซ็ตซิลวาเนียน 2 รายการ',
+    created_at: new Date().toISOString(),
+  },
+  {
+    id: 'ship-2',
+    customer_name: 'กนกวรรณ แสนสุข',
+    shipping_date: new Date(Date.now() - 86400000).toISOString().split('T')[0],
+    carrier: 'Kerry Express (KEX)',
+    tracking_number: 'KEX503928194',
+    note: 'บ้านตุ๊กตา Red Roof',
+    created_at: new Date(Date.now() - 86400000).toISOString(),
+  },
+  {
+    id: 'ship-3',
+    customer_name: 'ธนภัทร วงศ์สวรรค์',
+    shipping_date: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
+    carrier: 'ไปรษณีย์ไทย (EMS/ลงทะเบียน)',
+    tracking_number: 'ED839201948TH',
+    note: 'ตุ๊กตาเบบี้ช็อกโกแลตแรบบิท',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
+  },
+  {
+    id: 'ship-4',
+    customer_name: 'สุพรรณี เจริญพร',
+    shipping_date: new Date(Date.now() - 86400000 * 2).toISOString().split('T')[0],
+    carrier: 'Flash Express',
+    tracking_number: 'TH01928471928B',
+    note: 'ของจิ๋วเบเกอรี่',
+    created_at: new Date(Date.now() - 86400000 * 2).toISOString(),
   },
 ];

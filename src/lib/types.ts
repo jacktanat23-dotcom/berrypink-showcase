@@ -48,3 +48,55 @@ export interface ProductFormData {
   is_active: boolean;
   image_url?: string | null;
 }
+
+export const CARRIERS = [
+  'Flash Express',
+  'Kerry Express (KEX)',
+  'ไปรษณีย์ไทย (EMS/ลงทะเบียน)',
+  'J&T Express',
+  'Shopee Xpress (SPX)',
+  'อื่น ๆ',
+] as const;
+
+export type CarrierName = (typeof CARRIERS)[number];
+
+export interface Shipment {
+  id: string;
+  customer_name: string;
+  shipping_date: string; // YYYY-MM-DD
+  carrier: string;
+  tracking_number: string;
+  note?: string | null;
+  created_at?: string;
+  updated_at?: string;
+}
+
+export interface ShipmentFormData {
+  customer_name: string;
+  shipping_date: string;
+  carrier: string;
+  tracking_number: string;
+  note?: string;
+}
+
+export function getCarrierTrackingUrl(carrier: string, trackingNumber: string): string | null {
+  const cleanTrack = trackingNumber.trim();
+  if (!cleanTrack) return null;
+
+  if (carrier.includes('Flash')) {
+    return `https://www.flashexpress.co.th/tracking/?se=${encodeURIComponent(cleanTrack)}`;
+  }
+  if (carrier.includes('Kerry') || carrier.includes('KEX')) {
+    return `https://th.kerryexpress.com/th/track/?track=${encodeURIComponent(cleanTrack)}`;
+  }
+  if (carrier.includes('ไปรษณีย์ไทย') || carrier.includes('Thailand Post') || carrier.includes('EMS')) {
+    return `https://track.thailandpost.co.th/?trackNumber=${encodeURIComponent(cleanTrack)}`;
+  }
+  if (carrier.includes('J&T')) {
+    return `https://www.jtexpress.co.th/service/track?bills=${encodeURIComponent(cleanTrack)}`;
+  }
+  if (carrier.includes('Shopee') || carrier.includes('SPX')) {
+    return 'https://spx.co.th/';
+  }
+  return null;
+}
