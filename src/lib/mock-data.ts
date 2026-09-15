@@ -79,6 +79,19 @@ export const MOCK_PRODUCTS: Product[] = [
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
+  {
+    id: 'mock-7',
+    name: 'ยกบ็อกซ์เบบี้คอสตูม Baby Costume Series (ครบเซ็ต 8 ซอง)',
+    description: 'ยกกล่องซีลใหม่ 100% บรรจุ 8 ซอง ลุ้นครบทุกคาแรคเตอร์พร้อมตัว Secret ตัวแท้จาก Shop พร้อมกล่อง Display สวยงาม',
+    price: 1690,
+    image_url: 'https://images.unsplash.com/photo-1560859251-d563a49c5e4a?q=80&w=1000&auto=format&fit=crop',
+    category: 'ยกบ็อกซ์',
+    condition: 'มือ 1',
+    size_category: 'Baby',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
 ];
 
 export const MOCK_SHIPMENTS: Shipment[] = [

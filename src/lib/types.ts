@@ -19,6 +19,7 @@ export const PRODUCT_CATEGORIES = [
   'บ้าน',
   'เสื้อผ้า',
   'ซองสุ่ม',
+  'ยกบ็อกซ์',
 ] as const;
 
 export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];

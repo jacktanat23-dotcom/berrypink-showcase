@@ -186,6 +186,14 @@ VALUES
     'https://images.unsplash.com/photo-1558877385-81a1c7e67d72?q=80&w=1000&auto=format&fit=crop',
     'ซองสุ่ม',
     true
+),
+(
+    'ยกบ็อกซ์เบบี้คอสตูม Baby Costume Series (ครบเซ็ต 8 ซอง ซีลแท้)',
+    'ยกกล่องซีลใหม่ 100% บรรจุ 8 ซอง ลุ้นครบทุกคาแรคเตอร์พร้อมตัว Secret ตัวแท้จาก Shop พร้อมกล่อง Display สวยงาม',
+    1690.00,
+    'https://images.unsplash.com/photo-1560859251-d563a49c5e4a?q=80&w=1000&auto=format&fit=crop',
+    'ยกบ็อกซ์',
+    true
 );
 
 -- ================================================================
