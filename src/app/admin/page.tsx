@@ -17,7 +17,7 @@ import {
   Tag,
   ExternalLink,
 } from 'lucide-react';
-import { Product } from '@/lib/types';
+import { Product, PRODUCT_CATEGORIES } from '@/lib/types';
 import { MOCK_PRODUCTS } from '@/lib/mock-data';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 import { deleteProductImage } from '@/lib/supabase/storage';
@@ -28,6 +28,7 @@ export default function AdminDashboardPage() {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState('');
+  const [selectedCategory, setSelectedCategory] = useState('ทั้งหมด');
   const [selectedProductForModal, setSelectedProductForModal] = useState<Product | null>(null);
 
   // State สำหรับ Delete Modal
@@ -110,13 +111,19 @@ export default function AdminDashboardPage() {
   };
 
   const filteredProducts = useMemo(() => {
-    return products.filter((p) =>
-      p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-      (p.category && p.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (p.condition && p.condition.toLowerCase().includes(searchQuery.toLowerCase())) ||
-      (p.size_category && p.size_category.toLowerCase().includes(searchQuery.toLowerCase()))
-    );
-  }, [products, searchQuery]);
+    return products.filter((p) => {
+      const matchesSearch =
+        p.name.toLowerCase().includes(searchQuery.toLowerCase()) ||
+        (p.category && p.category.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (p.condition && p.condition.toLowerCase().includes(searchQuery.toLowerCase())) ||
+        (p.size_category && p.size_category.toLowerCase().includes(searchQuery.toLowerCase()));
+
+      const matchesCategory =
+        selectedCategory === 'ทั้งหมด' || p.category === selectedCategory;
+
+      return matchesSearch && matchesCategory;
+    });
+  }, [products, searchQuery, selectedCategory]);
 
   // คำนวณสถิติ
   const totalCount = products.length;
@@ -252,8 +259,8 @@ export default function AdminDashboardPage() {
       <div className="overflow-hidden rounded-3xl border border-slate-200 bg-white shadow-sm">
         
         {/* Table Search & Controls */}
-        <div className="border-b border-slate-200/80 p-5">
-          <div className="relative max-w-sm">
+        <div className="border-b border-slate-200/80 p-5 flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
+          <div className="relative flex-1 max-w-sm">
             <Search className="absolute left-3.5 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
             <input
               type="text"
@@ -262,6 +269,22 @@ export default function AdminDashboardPage() {
               onChange={(e) => setSearchQuery(e.target.value)}
               className="w-full rounded-xl border border-slate-200 pl-10 pr-4 py-2 text-sm text-slate-900 outline-none transition-all placeholder:text-slate-400 focus:border-indigo-600 focus:ring-4 focus:ring-indigo-50"
             />
+          </div>
+
+          <div className="flex items-center gap-2">
+            <span className="text-xs font-semibold text-slate-500 whitespace-nowrap">หมวดหมู่:</span>
+            <select
+              value={selectedCategory}
+              onChange={(e) => setSelectedCategory(e.target.value)}
+              className="rounded-xl border border-slate-200 bg-white px-3 py-2 text-sm font-medium text-slate-700 outline-none transition-all focus:border-purple-600 focus:ring-2 focus:ring-purple-100"
+            >
+              <option value="ทั้งหมด">ทั้งหมด (ทุกหมวดหมู่)</option>
+              {PRODUCT_CATEGORIES.map((cat) => (
+                <option key={cat} value={cat}>
+                  {cat}
+                </option>
+              ))}
+            </select>
           </div>
         </div>
 

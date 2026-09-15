@@ -66,6 +66,19 @@ export const MOCK_PRODUCTS: Product[] = [
     created_at: new Date().toISOString(),
     updated_at: new Date().toISOString(),
   },
+  {
+    id: 'mock-6',
+    name: 'ซองสุ่มเบบี้คอลเลกชัน Baby Blind Bag Series',
+    description: 'ซองสุ่มตุ๊กตาเบบี้ Sylvanian Families ลุ้นตัวละครลับและไอเทมสุดน่ารัก ของแท้ 100% ซองซีลยังไม่แกะ สนุกกับการลุ้นสะสม',
+    price: 220,
+    image_url: 'https://images.unsplash.com/photo-1558877385-81a1c7e67d72?q=80&w=1000&auto=format&fit=crop',
+    category: 'ซองสุ่ม',
+    condition: 'มือ 1',
+    size_category: 'Baby',
+    is_active: true,
+    created_at: new Date().toISOString(),
+    updated_at: new Date().toISOString(),
+  },
 ];
 
 export const MOCK_SHIPMENTS: Shipment[] = [

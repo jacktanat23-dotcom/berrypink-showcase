@@ -18,6 +18,7 @@ export const PRODUCT_CATEGORIES = [
   'ตัวเปล่า',
   'บ้าน',
   'เสื้อผ้า',
+  'ซองสุ่ม',
 ] as const;
 
 export type ProductCategory = (typeof PRODUCT_CATEGORIES)[number];

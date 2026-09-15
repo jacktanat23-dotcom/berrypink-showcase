@@ -178,6 +178,14 @@ VALUES
     'https://images.unsplash.com/photo-1596461404969-9ae70f2830c1?q=80&w=1000&auto=format&fit=crop',
     'เสื้อผ้า',
     true
+),
+(
+    'ซองสุ่มเบบี้คอลเลกชัน Baby Blind Bag Series (มือ 1 ซองซีล)',
+    'ซองสุ่มตุ๊กตาเบบี้ Sylvanian Families ลุ้นตัวละครลับและไอเทมสุดน่ารัก ของแท้ 100% ซองซีลยังไม่แกะ สนุกกับการลุ้นสะสม',
+    220.00,
+    'https://images.unsplash.com/photo-1558877385-81a1c7e67d72?q=80&w=1000&auto=format&fit=crop',
+    'ซองสุ่ม',
+    true
 );
 
 -- ================================================================
