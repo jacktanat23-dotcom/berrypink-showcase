@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useMemo } from 'react';
+import Image from 'next/image';
 import {
   Search,
   SlidersHorizontal,
@@ -98,17 +99,28 @@ export default function HomePage() {
   return (
     <div className="min-h-screen pb-20">
       {/* Hero Section */}
-      <section className="relative overflow-hidden bg-white border-b border-pink-100/80 py-14 sm:py-20">
-        <div className="absolute inset-0 -z-10 bg-[radial-gradient(45rem_50rem_at_top,theme(colors.pink.50),theme(colors.purple.50),theme(colors.white))] opacity-80" />
-        
-        <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8">
+      <section className="relative overflow-hidden border-b border-pink-100/80 py-16 sm:py-24 lg:py-28 min-h-[460px] sm:min-h-[520px] flex items-center justify-center">
+        {/* Background Image */}
+        <div className="absolute inset-0 -z-10">
+          <Image
+            src="/hero-bg.jpg"
+            alt="Berrypink Sylvanian Village"
+            fill
+            priority
+            className="object-cover object-center"
+          />
+          {/* Soft overlay so the artwork is vivid while text is crisp and readable */}
+          <div className="absolute inset-0 bg-gradient-to-b from-white/85 via-white/60 to-white/95 backdrop-blur-[0.5px]" />
+        </div>
+
+        <div className="mx-auto max-w-7xl px-4 text-center sm:px-6 lg:px-8 relative z-10">
           {/* Badge */}
-          <div className="inline-flex items-center gap-2 rounded-full border border-pink-200 bg-pink-50/90 px-4 py-1.5 text-xs font-semibold text-pink-700 backdrop-blur-sm mb-5 shadow-xs">
+          <div className="inline-flex items-center gap-2 rounded-full border border-pink-200/90 bg-white/90 px-4 py-1.5 text-xs font-semibold text-pink-700 backdrop-blur-md mb-5 shadow-xs">
             <span>🐰 Berrypink Toy & Sylvanian Store</span>
           </div>
 
           {/* Title */}
-          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl max-w-4xl mx-auto leading-tight sm:leading-tight">
+          <h1 className="text-3xl font-extrabold tracking-tight text-slate-900 sm:text-5xl lg:text-6xl max-w-4xl mx-auto leading-tight sm:leading-tight drop-shadow-xs">
             อาณาจักรของเล่น &{' '}
             <span className="bg-gradient-to-r from-purple-600 via-pink-600 to-rose-500 bg-clip-text text-transparent">
               Sylvanian Families
@@ -117,7 +129,7 @@ export default function HomePage() {
           </h1>
 
           {/* Subtitle */}
-          <p className="mx-auto mt-4 max-w-2xl text-sm sm:text-base text-slate-600 leading-relaxed">
+          <p className="mx-auto mt-4 max-w-2xl text-sm sm:text-base font-medium text-slate-700 leading-relaxed drop-shadow-2xs">
             พื้นที่สำหรับคนรักของเล่น คัดสรรความน่ารักทั้งของแท้มือหนึ่งและมือสองสภาพสวย พร้อมบริการรับซื้อ-รับขาย สั่งซื้อง่ายๆ ทักแชทได้ทันที
           </p>
 
