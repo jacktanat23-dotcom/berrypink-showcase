@@ -21,10 +21,24 @@ import {
   Truck,
   CheckCircle2,
   FileSpreadsheet,
+  UploadCloud,
+  FileText,
+  FileImage,
+  AlertTriangle,
+  Loader2,
+  Sparkles,
+  RotateCcw,
 } from 'lucide-react';
 import { Shipment, ShipmentFormData, CARRIERS, CarrierName, getCarrierTrackingUrl } from '@/lib/types';
 import { MOCK_SHIPMENTS } from '@/lib/mock-data';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import {
+  extractTextFromPdf,
+  extractTextFromImage,
+  parseReceiptText,
+  formatItemsToBulkText,
+  TRACKING_REGEX,
+} from '@/lib/receipt-parser';
 
 export default function AdminTrackingPage() {
   const [shipments, setShipments] = useState<Shipment[]>([]);
@@ -53,7 +67,18 @@ export default function AdminTrackingPage() {
   const [bulkDate, setBulkDate] = useState(new Date().toISOString().split('T')[0]);
   const [bulkCarrier, setBulkCarrier] = useState<string>(CARRIERS[0]);
   const [bulkRawText, setBulkRawText] = useState('');
-  const [bulkParsed, setBulkParsed] = useState<Array<{ name: string; tracking: string }>>([]);
+  const [bulkParsed, setBulkParsed] = useState<Array<{ name: string; tracking: string; isWarning?: boolean }>>([]);
+
+  // File Upload & Extraction States
+  const [isProcessingFile, setIsProcessingFile] = useState(false);
+  const [processingProgress, setProcessingProgress] = useState(0);
+  const [processingMessage, setProcessingMessage] = useState('');
+  const [uploadedFileName, setUploadedFileName] = useState<string | null>(null);
+  const [extractionAlert, setExtractionAlert] = useState<{
+    type: 'success' | 'warning' | 'error';
+    message: string;
+  } | null>(null);
+  const [isDragging, setIsDragging] = useState(false);
 
   const fetchShipments = async () => {
     setLoading(true);
@@ -181,43 +206,208 @@ export default function AdminTrackingPage() {
     }
 
     const lines = bulkRawText.split('\n');
-    const parsed: Array<{ name: string; tracking: string }> = [];
+    const parsed: Array<{ name: string; tracking: string; isWarning?: boolean }> = [];
 
     for (const line of lines) {
       const trimmed = line.trim();
       if (!trimmed) continue;
 
-      // คั่นด้วย Tab, Comma, หรือช่องว่าง
+      let name = '';
+      let tracking = '';
+
+      // คั่นด้วย Tab หรือ Comma
       let parts: string[] = [];
       if (trimmed.includes('\t')) {
         parts = trimmed.split('\t');
       } else if (trimmed.includes(',')) {
         parts = trimmed.split(',');
-      } else {
-        // แยกคำสุดท้ายเป็น tracking_number
-        const lastSpaceIdx = trimmed.lastIndexOf(' ');
-        if (lastSpaceIdx !== -1) {
-          parts = [trimmed.slice(0, lastSpaceIdx), trimmed.slice(lastSpaceIdx + 1)];
-        }
       }
 
       if (parts.length >= 2) {
-        const name = parts[0].trim();
-        const tracking = parts[1].trim();
-        if (name && tracking) {
-          parsed.push({ name, tracking });
+        const p0 = parts[0].trim();
+        const p1 = parts[1].trim();
+        if (TRACKING_REGEX.test(p0) && !TRACKING_REGEX.test(p1)) {
+          tracking = p0;
+          name = p1;
+        } else {
+          name = p0;
+          tracking = p1;
         }
+      } else {
+        // แยกด้วยช่องว่าง หรือตรวจจับ tracking pattern
+        const trackMatch = trimmed.match(TRACKING_REGEX);
+        if (trackMatch) {
+          tracking = trackMatch[1].toUpperCase();
+          const remainder = trimmed.replace(trackMatch[0], '').trim();
+          name = remainder;
+        } else {
+          const lastSpaceIdx = trimmed.lastIndexOf(' ');
+          if (lastSpaceIdx !== -1) {
+            name = trimmed.slice(0, lastSpaceIdx).trim();
+            tracking = trimmed.slice(lastSpaceIdx + 1).trim();
+          } else {
+            tracking = trimmed;
+          }
+        }
+      }
+
+      if (tracking) {
+        const isWarning =
+          !name ||
+          name === 'ไม่ระบุชื่อ' ||
+          name === '(ยังไม่ระบุชื่อ)' ||
+          name.includes('กรุณาระบุ');
+        parsed.push({
+          name: name || '(ยังไม่ระบุชื่อ)',
+          tracking,
+          isWarning,
+        });
+      } else if (name) {
+        parsed.push({
+          name,
+          tracking: '(ยังไม่ระบุเลข)',
+          isWarning: true,
+        });
       }
     }
 
     setBulkParsed(parsed);
   }, [bulkRawText]);
 
+  // จัดการอัปโหลดไฟล์ใบเสร็จ (PDF หรือ รูปภาพ) เพื่อสกัดข้อมูล
+  const handleFileUpload = async (file: File) => {
+    if (!file) return;
+
+    const fileType = file.type;
+    const fileName = file.name.toLowerCase();
+    const isPdf = fileType === 'application/pdf' || fileName.endsWith('.pdf');
+    const isImage =
+      fileType.startsWith('image/') ||
+      fileName.endsWith('.png') ||
+      fileName.endsWith('.jpg') ||
+      fileName.endsWith('.jpeg') ||
+      fileName.endsWith('.webp');
+
+    if (!isPdf && !isImage) {
+      setExtractionAlert({
+        type: 'error',
+        message: 'รองรับเฉพาะไฟล์ PDF หรือไฟล์ภาพ (.png, .jpg, .jpeg, .webp) เท่านั้น',
+      });
+      return;
+    }
+
+    setIsProcessingFile(true);
+    setProcessingProgress(10);
+    setProcessingMessage('กำลังเริ่มต้นอ่านไฟล์...');
+    setUploadedFileName(file.name);
+    setExtractionAlert(null);
+
+    try {
+      let extractedRawText = '';
+
+      if (isPdf) {
+        extractedRawText = await extractTextFromPdf(file, (pct, msg) => {
+          setProcessingProgress(pct);
+          setProcessingMessage(msg);
+        });
+      } else {
+        extractedRawText = await extractTextFromImage(file, (pct, msg) => {
+          setProcessingProgress(pct);
+          setProcessingMessage(msg);
+        });
+      }
+
+      setProcessingProgress(98);
+      setProcessingMessage('กำลังวิเคราะห์และจับคู่ชื่อกับเลขพัสดุ...');
+
+      const result = parseReceiptText(extractedRawText);
+
+      if (result.items.length === 0) {
+        setExtractionAlert({
+          type: 'warning',
+          message:
+            'ไม่พบหมายเลขพัสดุในไฟล์นี้ กรุณาตรวจสอบว่าเป็นใบเสร็จขนส่ง (เช่น Flash Express) หรือคุณสามารถคัดลอกข้อความมาวางด้วยตนเองได้',
+        });
+      } else {
+        const formattedText = formatItemsToBulkText(result.items);
+        setBulkRawText((prev) => (prev.trim() ? `${prev.trim()}\n${formattedText}` : formattedText));
+
+        if (result.incompleteCount > 0) {
+          setExtractionAlert({
+            type: 'warning',
+            message: `ดึงข้อมูลได้ ${result.totalDetected} รายการ (พบ ${result.incompleteCount} รายการที่ไม่พบชื่อลูกค้าชัดเจน ดูแถวไฮไลต์สีส้มในตารางด้านล่างเพื่อตรวจสอบก่อนบันทึก)`,
+          });
+        } else {
+          setExtractionAlert({
+            type: 'success',
+            message: `ดึงข้อมูลพัสดุสำเร็จครบถ้วนทั้ง ${result.totalDetected} รายการ พร้อมนำเข้า! 🎉`,
+          });
+        }
+      }
+    } catch (err: any) {
+      console.error('File extraction error:', err);
+      setExtractionAlert({
+        type: 'error',
+        message: `เกิดข้อผิดพลาดในการอ่านไฟล์: ${err.message || 'โปรดลองใหม่อีกครั้ง หรือพิมพ์ข้อความด้วยตนเอง'}`,
+      });
+    } finally {
+      setIsProcessingFile(false);
+      setProcessingProgress(100);
+    }
+  };
+
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(true);
+  };
+
+  const handleDragLeave = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.stopPropagation();
+    setIsDragging(false);
+    if (e.dataTransfer.files && e.dataTransfer.files.length > 0) {
+      handleFileUpload(e.dataTransfer.files[0]);
+    }
+  };
+
+  const handleCloseBulkModal = () => {
+    setIsBulkModalOpen(false);
+    setUploadedFileName(null);
+    setExtractionAlert(null);
+    setIsProcessingFile(false);
+    setProcessingProgress(0);
+  };
+
   // บันทึก Bulk Import เข้าฐานข้อมูลทั้งหมด
   const handleBulkSubmit = async () => {
     if (bulkParsed.length === 0) {
-      alert('ไม่พบข้อมูลที่จะนำเข้า กรุณาวางข้อความในรูปแบบ: ชื่อ นามสกุล เลขพัสดุ');
+      alert('ไม่พบข้อมูลที่จะนำเข้า กรุณาวางข้อความหรืออัปโหลดไฟล์ใบเสร็จ');
       return;
+    }
+
+    const invalidItems = bulkParsed.filter(
+      (item) =>
+        !item.name ||
+        item.name === '(ยังไม่ระบุชื่อ)' ||
+        item.name === 'ไม่ระบุชื่อ' ||
+        item.tracking === '(ยังไม่ระบุเลข)'
+    );
+
+    if (invalidItems.length > 0) {
+      if (
+        !confirm(
+          `มี ${invalidItems.length} รายการที่ชื่อหรือเลขพัสดุยังไม่สมบูรณ์ คุณต้องการบันทึกข้อมูลต่อไปหรือไม่?`
+        )
+      ) {
+        return;
+      }
     }
 
     setIsSubmitting(true);
@@ -238,6 +428,8 @@ export default function AdminTrackingPage() {
       setIsBulkModalOpen(false);
       setBulkRawText('');
       setBulkParsed([]);
+      setUploadedFileName(null);
+      setExtractionAlert(null);
       await fetchShipments();
       alert(`นำเข้าสำเร็จเรียบร้อยแล้วทั้งหมด ${payloads.length} รายการ! 🎉`);
     } catch (err: any) {
@@ -637,7 +829,7 @@ export default function AdminTrackingPage() {
       {/* 2. Modal: นำเข้าข้อมูลแบบชุด (Bulk Import) */}
       {isBulkModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs">
-          <div className="w-full max-w-2xl overflow-hidden rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 max-h-[90vh] flex flex-col">
+          <div className="w-full max-w-3xl overflow-hidden rounded-3xl bg-white p-6 shadow-2xl border border-slate-100 max-h-[92vh] flex flex-col">
             <div className="flex items-center justify-between pb-4 border-b border-slate-100 shrink-0">
               <div>
                 <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
@@ -645,12 +837,12 @@ export default function AdminTrackingPage() {
                   <span>นำเข้าข้อมูลพัสดุแบบชุด (Bulk Import)</span>
                 </h2>
                 <p className="text-xs text-slate-500 mt-0.5">
-                  วางรายชื่อและเลขพัสดุหลายคนพร้อมกันในรอบจัดส่งเดียวกัน
+                  อัปโหลดไฟล์ PDF/รูปภาพใบเสร็จ หรือวางข้อความเพื่อนำเข้ารายชื่อและเลขพัสดุหลายคนพร้อมกัน
                 </p>
               </div>
               <button
                 type="button"
-                onClick={() => setIsBulkModalOpen(false)}
+                onClick={handleCloseBulkModal}
                 className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-600"
               >
                 <X className="h-5 w-5" />
@@ -690,16 +882,163 @@ export default function AdminTrackingPage() {
                 </div>
               </div>
 
+              {/* File Upload Dropzone (PDF / Images) */}
+              <div className="space-y-2">
+                <div className="flex items-center justify-between">
+                  <label className="block text-xs font-semibold text-slate-700 flex items-center gap-1.5">
+                    <Sparkles className="h-3.5 w-3.5 text-purple-600" />
+                    <span>สกัดข้อมูลอัตโนมัติจากไฟล์ใบเสร็จ (PDF / รูปภาพ)</span>
+                  </label>
+                  {uploadedFileName && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setUploadedFileName(null);
+                        setExtractionAlert(null);
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-rose-500 flex items-center gap-1 transition-colors"
+                    >
+                      <X className="h-3 w-3" />
+                      <span>ล้างไฟล์</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Drop Area */}
+                <div
+                  onDragOver={handleDragOver}
+                  onDragLeave={handleDragLeave}
+                  onDrop={handleDrop}
+                  className={`relative rounded-2xl border-2 border-dashed p-4 sm:p-5 text-center transition-all ${
+                    isDragging
+                      ? 'border-purple-500 bg-purple-50/80 scale-[1.01]'
+                      : 'border-purple-200/80 bg-gradient-to-b from-purple-50/30 to-pink-50/20 hover:border-purple-300 hover:bg-purple-50/40'
+                  }`}
+                >
+                  <input
+                    type="file"
+                    id="receipt-file-input"
+                    accept=".pdf,image/png,image/jpeg,image/webp"
+                    className="hidden"
+                    disabled={isProcessingFile}
+                    onChange={(e) => {
+                      if (e.target.files && e.target.files[0]) {
+                        handleFileUpload(e.target.files[0]);
+                        e.target.value = '';
+                      }
+                    }}
+                  />
+
+                  {isProcessingFile ? (
+                    <div className="py-2 flex flex-col items-center justify-center space-y-2.5">
+                      <div className="flex items-center gap-2 text-purple-600 font-semibold text-xs sm:text-sm">
+                        <Loader2 className="h-4 w-4 animate-spin text-purple-600 shrink-0" />
+                        <span>{processingMessage || 'กำลังอ่านข้อมูลจากไฟล์...'}</span>
+                      </div>
+                      {/* Progress bar */}
+                      <div className="w-full max-w-xs bg-purple-100 rounded-full h-2 overflow-hidden">
+                        <div
+                          className="bg-gradient-to-r from-purple-600 to-pink-500 h-2 rounded-full transition-all duration-300"
+                          style={{ width: `${processingProgress}%` }}
+                        />
+                      </div>
+                      <span className="text-[11px] text-slate-400">{processingProgress}% เสร็จสิ้น</span>
+                    </div>
+                  ) : (
+                    <label
+                      htmlFor="receipt-file-input"
+                      className="cursor-pointer flex flex-col items-center justify-center gap-2 group"
+                    >
+                      <div className="flex items-center gap-2">
+                        <div className="rounded-xl bg-purple-100 p-2 text-purple-600 group-hover:scale-110 transition-transform">
+                          <UploadCloud className="h-5 w-5" />
+                        </div>
+                        <div className="flex items-center gap-1.5 text-xs text-slate-500">
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 font-mono text-[11px] text-purple-700 font-semibold">
+                            <FileText className="h-3 w-3" /> PDF
+                          </span>
+                          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-md bg-white border border-slate-200 font-mono text-[11px] text-pink-700 font-semibold">
+                            <FileImage className="h-3 w-3" /> PNG / JPG
+                          </span>
+                        </div>
+                      </div>
+
+                      <p className="text-xs sm:text-sm text-slate-700 font-medium">
+                        ลากไฟล์ใบเสร็จมาวางที่นี่ หรือ{' '}
+                        <span className="text-purple-600 font-bold group-hover:underline">คลิกเพื่อเลือกไฟล์</span>
+                      </p>
+                      <p className="text-[11px] text-slate-400">
+                        รองรับใบเสร็จขนส่ง Flash Express, Kerry, ไปรษณีย์ไทย ฯลฯ
+                      </p>
+
+                      {uploadedFileName && (
+                        <div className="mt-1 inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-purple-100/80 border border-purple-200 text-xs font-semibold text-purple-800">
+                          <Check className="h-3.5 w-3.5 text-purple-600" />
+                          <span className="max-w-[260px] truncate">{uploadedFileName}</span>
+                        </div>
+                      )}
+                    </label>
+                  )}
+                </div>
+
+                {/* Extraction Notification Banner */}
+                {extractionAlert && (
+                  <div
+                    className={`flex items-start gap-2.5 p-3 rounded-2xl border text-xs leading-relaxed transition-all ${
+                      extractionAlert.type === 'success'
+                        ? 'bg-emerald-50/90 border-emerald-200 text-emerald-800'
+                        : extractionAlert.type === 'warning'
+                        ? 'bg-amber-50/90 border-amber-200 text-amber-800'
+                        : 'bg-rose-50/90 border-rose-200 text-rose-800'
+                    }`}
+                  >
+                    {extractionAlert.type === 'success' ? (
+                      <CheckCircle2 className="h-4 w-4 text-emerald-600 shrink-0 mt-0.5" />
+                    ) : extractionAlert.type === 'warning' ? (
+                      <AlertTriangle className="h-4 w-4 text-amber-600 shrink-0 mt-0.5" />
+                    ) : (
+                      <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+                    )}
+                    <div className="flex-1">
+                      <span>{extractionAlert.message}</span>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={() => setExtractionAlert(null)}
+                      className="text-slate-400 hover:text-slate-600 p-0.5"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+
               {/* Paste Textarea */}
               <div>
-                <label className="block text-xs font-semibold text-slate-700 mb-1.5">
-                  วางข้อความรายชื่อและเลขพัสดุ (บรรทัดละ 1 คน)
-                </label>
+                <div className="flex items-center justify-between mb-1.5">
+                  <label className="block text-xs font-semibold text-slate-700">
+                    ข้อความรายชื่อและเลขพัสดุ (บรรทัดละ 1 คน)
+                  </label>
+                  {bulkRawText && (
+                    <button
+                      type="button"
+                      onClick={() => {
+                        if (confirm('คุณต้องการล้างข้อความทั้งหมดใช่หรือไม่?')) {
+                          setBulkRawText('');
+                        }
+                      }}
+                      className="text-[11px] text-slate-400 hover:text-rose-500 flex items-center gap-1 transition-colors"
+                    >
+                      <Trash2 className="h-3 w-3" />
+                      <span>ล้างข้อความ</span>
+                    </button>
+                  )}
+                </div>
                 <p className="text-[11px] text-slate-400 mb-2">
-                  ตัวอย่าง: <code className="bg-slate-100 px-1 py-0.5 rounded text-purple-700">สมชาย ใจดี TH0123456789</code> หรือคั่นด้วยลูกน้ำ / แท็บจาก Excel
+                  ตัวอย่าง: <code className="bg-slate-100 px-1 py-0.5 rounded text-purple-700">สมชาย ใจดี TH0123456789</code> หรือคั่นด้วยลูกน้ำ / แท็บจาก Excel (สามารถแก้ไขข้อความตรงนี้ได้)
                 </p>
                 <textarea
-                  rows={5}
+                  rows={4}
                   value={bulkRawText}
                   onChange={(e) => setBulkRawText(e.target.value)}
                   placeholder="ชลธิชา มั่นคง TH01495829482A&#10;กนกวรรณ แสนสุข KEX503928194&#10;ธนภัทร วงศ์สวรรค์ ED839201948TH"
@@ -709,37 +1048,76 @@ export default function AdminTrackingPage() {
 
               {/* Live Preview of parsed rows */}
               <div>
-                <div className="flex items-center justify-between mb-2">
-                  <span className="text-xs font-bold text-slate-700">
-                    ตารางพรีวิวผลลัพธ์ ({bulkParsed.length} รายการ)
-                  </span>
-                  {bulkParsed.length > 0 && (
+                <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                  <div className="flex items-center gap-2">
+                    <span className="text-xs font-bold text-slate-700">
+                      ตารางพรีวิวผลลัพธ์ ({bulkParsed.length} รายการ)
+                    </span>
+                    {bulkParsed.some((it) => it.isWarning) && (
+                      <span className="text-[11px] font-semibold text-amber-700 bg-amber-50 border border-amber-200 px-2 py-0.5 rounded-full flex items-center gap-1">
+                        <AlertTriangle className="h-3 w-3 text-amber-600" />
+                        <span>มีรายการรอตรวจสอบ</span>
+                      </span>
+                    )}
+                  </div>
+
+                  {bulkParsed.length > 0 && !bulkParsed.some((it) => it.isWarning) && (
                     <span className="text-[11px] text-emerald-600 font-semibold flex items-center gap-1">
                       <CheckCircle2 className="h-3.5 w-3.5" />
-                      พร้อมนำเข้าข้อมูล
+                      พร้อมนำเข้าข้อมูลครบถ้วน
                     </span>
                   )}
                 </div>
 
                 {bulkParsed.length > 0 ? (
-                  <div className="overflow-hidden rounded-xl border border-slate-200 max-h-40 overflow-y-auto">
+                  <div className="overflow-hidden rounded-xl border border-slate-200 max-h-48 overflow-y-auto">
                     <table className="w-full text-left text-xs text-slate-600">
                       <thead className="bg-slate-50 font-semibold text-slate-500 border-b border-slate-200 sticky top-0">
                         <tr>
-                          <th className="px-3 py-2">ลำดับ</th>
+                          <th className="px-3 py-2 w-12 text-center">ลำดับ</th>
                           <th className="px-3 py-2">ชื่อลูกค้า</th>
                           <th className="px-3 py-2">เลขพัสดุ</th>
+                          <th className="px-3 py-2 text-right">สถานะ</th>
                         </tr>
                       </thead>
                       <tbody className="divide-y divide-slate-100">
                         {bulkParsed.map((row, idx) => (
-                          <tr key={idx} className="hover:bg-slate-50">
-                            <td className="px-3 py-1.5 text-slate-400">{idx + 1}</td>
+                          <tr
+                            key={idx}
+                            className={`transition-colors ${
+                              row.isWarning
+                                ? 'bg-amber-50/70 hover:bg-amber-50'
+                                : 'hover:bg-slate-50'
+                            }`}
+                          >
+                            <td className="px-3 py-1.5 text-center text-slate-400 font-mono">
+                              {idx + 1}
+                            </td>
                             <td className="px-3 py-1.5 font-medium text-slate-900">
-                              {row.name}
+                              {row.isWarning && (!row.name || row.name.includes('ไม่ระบุชื่อ')) ? (
+                                <span className="text-amber-700 italic font-normal flex items-center gap-1">
+                                  <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+                                  {row.name}
+                                </span>
+                              ) : (
+                                row.name
+                              )}
                             </td>
                             <td className="px-3 py-1.5 font-mono text-purple-700 font-bold">
                               {row.tracking}
+                            </td>
+                            <td className="px-3 py-1.5 text-right">
+                              {row.isWarning ? (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-amber-100 text-amber-800 border border-amber-200">
+                                  <AlertTriangle className="h-2.5 w-2.5" />
+                                  รอตรวจชื่อ
+                                </span>
+                              ) : (
+                                <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-semibold bg-emerald-100 text-emerald-800 border border-emerald-200">
+                                  <Check className="h-2.5 w-2.5" />
+                                  พร้อมบันทึก
+                                </span>
+                              )}
                             </td>
                           </tr>
                         ))}
@@ -748,7 +1126,7 @@ export default function AdminTrackingPage() {
                   </div>
                 ) : (
                   <div className="rounded-xl border border-dashed border-slate-200 p-4 text-center text-xs text-slate-400">
-                    ยังไม่มีข้อมูลที่จะแสดง กรุณาวางข้อความในช่องด้านบน
+                    ยังไม่มีข้อมูลที่จะแสดง อัปโหลดไฟล์ใบเสร็จด้านบน หรือวางข้อความในช่อง
                   </div>
                 )}
               </div>
@@ -757,7 +1135,7 @@ export default function AdminTrackingPage() {
             <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100 shrink-0 mt-4">
               <button
                 type="button"
-                onClick={() => setIsBulkModalOpen(false)}
+                onClick={handleCloseBulkModal}
                 className="rounded-xl border border-slate-200 px-4 py-2 text-xs font-semibold text-slate-600 hover:bg-slate-50"
               >
                 ยกเลิก
@@ -765,7 +1143,7 @@ export default function AdminTrackingPage() {
               <button
                 type="button"
                 onClick={handleBulkSubmit}
-                disabled={isSubmitting || bulkParsed.length === 0}
+                disabled={isSubmitting || bulkParsed.length === 0 || isProcessingFile}
                 className="rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 px-5 py-2 text-xs font-semibold text-white shadow-sm hover:from-purple-700 hover:to-pink-600 disabled:opacity-50"
               >
                 {isSubmitting
