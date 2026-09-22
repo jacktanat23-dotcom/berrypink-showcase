@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import Link from 'next/link';
+import Image from 'next/image';
 import {
   Search,
   Package,
@@ -139,29 +140,42 @@ export default function TrackingPage() {
 
   return (
     <div className="min-h-screen bg-gradient-to-b from-pink-50/40 via-purple-50/20 to-white pb-20">
-      {/* Top Banner / Hero */}
-      <section className="relative overflow-hidden border-b border-pink-100/80 bg-white/70 py-12 sm:py-16 backdrop-blur-xs">
-        <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8">
+      {/* Top Banner / Hero with Sylvanian Village Background */}
+      <section className="relative overflow-hidden border-b border-pink-100/80 py-12 sm:py-20 flex items-center justify-center min-h-[440px] sm:min-h-[480px]">
+        {/* Background Image & Soft Overlay */}
+        <div className="absolute inset-0 -z-10">
+          <Image
+            src="/hero-bg.jpg"
+            alt="Berrypink Sylvanian Village"
+            fill
+            priority
+            className="object-cover object-center"
+          />
+          {/* Soft frosted gradient overlay so the cute shop artwork is vivid while search bar and text are crystal clear */}
+          <div className="absolute inset-0 bg-gradient-to-b from-white/85 via-white/60 to-white/95 sm:from-white/85 sm:via-white/50 sm:to-white/95 backdrop-blur-[0.5px]" />
+        </div>
+
+        <div className="mx-auto max-w-4xl px-4 text-center sm:px-6 lg:px-8 relative z-10 w-full">
           <Link
             href="/"
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500 hover:text-slate-900 mb-6 transition-colors"
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-slate-600 hover:text-slate-900 mb-6 px-3.5 py-1.5 rounded-full bg-white/90 backdrop-blur-md border border-pink-200/80 shadow-2xs transition-all hover:bg-white active:scale-95"
           >
-            <ArrowLeft className="h-4 w-4" />
-            กลับสู่หน้าร้านหลัก
+            <ArrowLeft className="h-3.5 w-3.5 text-purple-600" />
+            <span>กลับสู่หน้าร้านหลัก</span>
           </Link>
 
           {/* Badge */}
           <div className="flex justify-center">
-            <div className="inline-flex items-center gap-2 rounded-full border border-purple-200 bg-purple-50/90 px-4 py-1.5 text-xs font-semibold text-purple-700 shadow-2xs">
+            <div className="inline-flex items-center gap-2 rounded-full border border-purple-200/90 bg-white/90 px-4 py-1.5 text-xs font-semibold text-purple-700 shadow-2xs backdrop-blur-md">
               <Truck className="h-4 w-4 text-purple-600" />
               <span>Berrypink Delivery & Tracking</span>
             </div>
           </div>
 
-          <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl">
+          <h1 className="mt-4 text-3xl font-extrabold tracking-tight text-slate-900 sm:text-4xl drop-shadow-xs">
             ตรวจสอบเลขพัสดุ
           </h1>
-          <p className="mx-auto mt-3 max-w-xl text-sm sm:text-base text-slate-600 leading-relaxed">
+          <p className="mx-auto mt-3 max-w-xl text-sm sm:text-base font-medium text-slate-700 leading-relaxed drop-shadow-2xs">
             พิมพ์ชื่อหรือนามสกุลของผู้รับ เพื่อค้นหาเลขพัสดุและติดตามสถานะการจัดส่งสินค้าของคุณ
           </p>
 
@@ -170,7 +184,7 @@ export default function TrackingPage() {
             onSubmit={handleSearch}
             className="mt-8 mx-auto max-w-2xl"
           >
-            <div className="relative flex items-center rounded-2xl border-2 border-purple-200 bg-white p-1.5 shadow-md shadow-purple-100/50 transition-all focus-within:border-purple-600 focus-within:ring-4 focus-within:ring-purple-100">
+            <div className="relative flex items-center rounded-2xl border-2 border-purple-200/90 bg-white/95 backdrop-blur-md p-1.5 shadow-lg shadow-purple-900/5 transition-all focus-within:border-purple-600 focus-within:ring-4 focus-within:ring-purple-100">
               <div className="pl-3.5 pr-2 text-purple-500">
                 <Search className="h-5 w-5" />
               </div>
