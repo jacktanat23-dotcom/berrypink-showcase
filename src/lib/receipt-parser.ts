@@ -22,82 +22,62 @@ export const TRACKING_REGEX =
 export const RECEIVER_PREFIX_REGEX =
   /^(ผู้รับ|receiver|to|ชื่อผู้รับ|ชื่อลูกค้า|cust(omer)?)\s*[:：\-]\s*/i;
 
-const JUNK_PATTERNS = [
-  /flash\s*express/i,
-  /kerry/i,
-  /j&t/i,
-  /ไปรษณีย์/i,
+// Header labels and metadata that should NEVER be treated as customer names
+const HEADER_OR_LABEL_PATTERNS = [
+  /^(customer(\s*no)?|address|tax\s*id|tel|e-mail|email|date|time|branch|สาขา|ผู้ส่ง|sender|cashier|staff|pos|bill\s*no|receipt\s*no|เลขที่|วันที่)\s*[:：\-]/i,
+  /^e-mail\s*[:：\-]?$/i,
+  /^tel\s*[:：\-]?/i,
+  /^tax\s*id\s*[:：\-]?/i,
+  /^customer\s*[:：\-]?/i,
+  /^address\s*[:：\-]?/i,
+  /^flash\s*express/i,
+  /บริษัท\s*แฟลช/i,
   /ใบเสร็จ/i,
   /ใบกำกับ/i,
-  /tax\s*invoice/i,
-  /abb/i,
-  /weight/i,
-  /น้ำหนัก/i,
-  /freight/i,
-  /charge/i,
-  /fuel/i,
-  /surcharge/i,
-  /size/i,
-  /ขนาด/i,
-  /speed/i,
-  /cod/i,
-  /vat/i,
-  /subtotal/i,
-  /total/i,
+  /ยูนิลีเวอร์/i,
+  /ห้วยขวาง/i,
+  /กรุงเทพมหานคร/i,
+  /ราคาสินค้า/i,
+  /บริการรวมภาษี/i,
+  /จํานวนเงินเรียกเก็บ/i,
+  /จำนวนเงินเรียกเก็บ/i,
+  /paid\s*[:：\-]?/i,
   /ยอดรวม/i,
   /รวมทั้งสิ้น/i,
   /เงินสด/i,
-  /cash/i,
-  /change/i,
   /เงินทอน/i,
-  /discount/i,
-  /ส่วนลด/i,
-  /branch/i,
-  /สาขา/i,
-  /pos/i,
-  /bill\s*no/i,
-  /receipt\s*no/i,
-  /เลขที่/i,
-  /วันที่/i,
-  /date/i,
-  /time/i,
-  /staff/i,
-  /cashier/i,
-  /พนักงาน/i,
-  /sender/i,
-  /ผู้ส่ง/i,
-  /berrypink/i,
-  /signature/i,
-  /ลายมือชื่อ/i,
   /ขอบคุณ/i,
   /thank\s*you/i,
-  /barcode/i,
-  /declared/i,
-  /insurance/i,
-  /ค่าขนส่ง/i,
-  /ค่าบริการ/i,
-  /รายการพัสดุ/i,
-  /^(เลขพัสดุ|เลขที่พัสดุ|tracking|awb|waybill)\s*[:：\-]?$/i,
-  /^\s*[\d,.]+\s*(บาท|baht|thb|kg|cm)?\s*$/i,
   /^[=\-_*#]{3,}$/,
 ];
 
-export function isJunkLine(line: string): boolean {
-  const trimmed = line.trim();
-  if (!trimmed) return true;
-  for (const pat of JUNK_PATTERNS) {
-    if (pat.test(trimmed)) return true;
-  }
-  return false;
-}
+// Inline courier metadata tokens to strip from a line (e.g. "Fuel Surcharge: 3", "Weight:1kg", "Freight Charge: 25")
+const INLINE_METADATA_STRIP_REGEX =
+  /\s*(fuel\s*surcharge|freight\s*charge|weight|size|speed|cod|declared|vat|discount|ค่าขนส่ง|ค่าธรรมเนียม|น้ำหนัก|ขนาด)\s*[:：\-]?\s*[\d,.*a-zA-Z\s\/]*$/i;
 
 export function cleanCustomerName(raw: string): string {
-  let name = raw.trim();
-  name = name.replace(RECEIVER_PREFIX_REGEX, '');
-  name = name.replace(/^(เลขพัสดุ|เลขที่พัสดุ|tracking\s*no|tracking|awb)\s*[:：\-]\s*/i, '');
-  name = name.replace(/^(\d+[\.\)\-]\s*)+/, '');
-  name = name.replace(/\s+[\d,.]+\s*(บาท|baht|thb|kg|cm)?$/i, '');
-  return name.trim();
+  let text = raw.trim();
+  if (!text) return '';
+
+  // Check if entire line is a header/junk label
+  for (const pat of HEADER_OR_LABEL_PATTERNS) {
+    if (pat.test(text)) return '';
+  }
+
+  // Strip prefix like "1.", "2)", "01."
+  text = text.replace(/^(\d+[\.\)\-]\s*)+/, '');
+  // Strip receiver prefixes like "ผู้รับ :", "ชื่อ:"
+  text = text.replace(RECEIVER_PREFIX_REGEX, '');
+  text = text.replace(/^(เลขพัสดุ|เลขที่พัสดุ|tracking\s*no|tracking|awb)\s*[:：\-]\s*/i, '');
+
+  // Strip inline courier metadata (repeat to remove multiple chained tokens)
+  text = text.replace(INLINE_METADATA_STRIP_REGEX, '');
+  text = text.replace(INLINE_METADATA_STRIP_REGEX, '');
+
+  // Strip trailing numbers/prices
+  text = text.replace(/\s+[\d,.]+\s*(บาท|baht|thb|kg|cm)?$/i, '');
+
+  return text.trim();
 }
 
 /**
@@ -120,47 +100,28 @@ export function parseReceiptText(text: string): ParseReceiptResult {
     const tracking = match[1].toUpperCase();
     let name = '';
 
-    // Check if the line itself contains the name
+    // Step 1: Check if the same line contains the name
     let lineWithoutTracking = line.replace(match[0], '').trim();
     lineWithoutTracking = cleanCustomerName(lineWithoutTracking);
 
-    if (lineWithoutTracking && !isJunkLine(lineWithoutTracking)) {
+    if (lineWithoutTracking) {
       name = lineWithoutTracking;
     } else {
-      // Step A: Check if immediate adjacent lines (i-1 or i+1) explicitly have receiver prefix
-      if (i - 1 >= 0 && RECEIVER_PREFIX_REGEX.test(rawLines[i - 1]) && !usedLineIndices.has(i - 1)) {
-        name = cleanCustomerName(rawLines[i - 1]);
-        usedLineIndices.add(i - 1);
-      } else if (i + 1 < rawLines.length && RECEIVER_PREFIX_REGEX.test(rawLines[i + 1]) && !usedLineIndices.has(i + 1)) {
-        name = cleanCustomerName(rawLines[i + 1]);
-        usedLineIndices.add(i + 1);
-      } else {
-        // Step B: Check immediate following line (i+1)
-        if (
-          i + 1 < rawLines.length &&
-          !isJunkLine(rawLines[i + 1]) &&
-          !TRACKING_REGEX.test(rawLines[i + 1]) &&
-          !usedLineIndices.has(i + 1)
-        ) {
-          const cand = cleanCustomerName(rawLines[i + 1]);
-          if (cand && !isJunkLine(cand)) {
-            name = cand;
-            usedLineIndices.add(i + 1);
-          }
+      // Step 2: Check immediate next line (i+1)
+      if (i + 1 < rawLines.length && !TRACKING_REGEX.test(rawLines[i + 1])) {
+        const nextCleaned = cleanCustomerName(rawLines[i + 1]);
+        if (nextCleaned) {
+          name = nextCleaned;
+          usedLineIndices.add(i + 1);
         }
-        // Step C: Check immediate preceding line (i-1)
-        if (
-          !name &&
-          i - 1 >= 0 &&
-          !isJunkLine(rawLines[i - 1]) &&
-          !TRACKING_REGEX.test(rawLines[i - 1]) &&
-          !usedLineIndices.has(i - 1)
-        ) {
-          const cand = cleanCustomerName(rawLines[i - 1]);
-          if (cand && !isJunkLine(cand)) {
-            name = cand;
-            usedLineIndices.add(i - 1);
-          }
+      }
+
+      // Step 3: Check immediate preceding line (i-1) if not found
+      if (!name && i - 1 >= 0 && !TRACKING_REGEX.test(rawLines[i - 1]) && !usedLineIndices.has(i - 1)) {
+        const prevCleaned = cleanCustomerName(rawLines[i - 1]);
+        if (prevCleaned) {
+          name = prevCleaned;
+          usedLineIndices.add(i - 1);
         }
       }
     }
