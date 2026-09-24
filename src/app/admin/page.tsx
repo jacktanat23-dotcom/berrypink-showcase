@@ -110,6 +110,36 @@ export default function AdminDashboardPage() {
     }
   };
 
+  const handleToggleSoldOut = async (product: Product) => {
+    const newStatus = !product.is_sold_out;
+    try {
+      if (isLiveDatabase) {
+        const supabase = createClient();
+        const { error } = await supabase
+          .from('products')
+          .update({ is_sold_out: newStatus, updated_at: new Date().toISOString() })
+          .eq('id', product.id);
+
+        if (error) throw error;
+      }
+
+      setProducts((prev) =>
+        prev.map((p) => (p.id === product.id ? { ...p, is_sold_out: newStatus } : p))
+      );
+      setFeedback({
+        type: 'success',
+        message: newStatus
+          ? `ตั้งค่าสินค้า "${product.name}" เป็น Sold Out แล้ว`
+          : `เปิดขายสินค้า "${product.name}" ตามปกติแล้ว`,
+      });
+      setTimeout(() => setFeedback(null), 3000);
+    } catch (err: any) {
+      console.error('Toggle sold out error:', err);
+      setFeedback({ type: 'error', message: err.message || 'ไม่สามารถอัปเดตสถานะได้' });
+      setTimeout(() => setFeedback(null), 4000);
+    }
+  };
+
   const filteredProducts = useMemo(() => {
     return products.filter((p) => {
       const matchesSearch =
@@ -372,17 +402,37 @@ export default function AdminDashboardPage() {
 
                     {/* Status */}
                     <td className="px-6 py-4 whitespace-nowrap">
-                      {product.is_active ? (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-emerald-50 px-2.5 py-0.5 text-xs font-semibold text-emerald-700">
-                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-500" />
-                          แสดงผล
-                        </span>
-                      ) : (
-                        <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-2.5 py-0.5 text-xs font-semibold text-slate-600">
-                          <span className="h-1.5 w-1.5 rounded-full bg-slate-400" />
-                          ซ่อนไว้
-                        </span>
-                      )}
+                      <div className="flex flex-col gap-1.5 items-start">
+                        {/* Sold Out Quick Toggle */}
+                        <button
+                          type="button"
+                          onClick={() => handleToggleSoldOut(product)}
+                          title="คลิกเพื่อสลับสถานะ Sold Out"
+                          className={`inline-flex items-center gap-1.5 rounded-full px-2.5 py-0.5 text-xs font-bold transition-all active:scale-95 cursor-pointer border ${
+                            product.is_sold_out
+                              ? 'bg-rose-50 text-rose-700 border-rose-200 hover:bg-rose-100'
+                              : 'bg-emerald-50 text-emerald-700 border-emerald-200 hover:bg-emerald-100'
+                          }`}
+                        >
+                          <span
+                            className={`h-1.5 w-1.5 rounded-full ${
+                              product.is_sold_out ? 'bg-rose-500 animate-pulse' : 'bg-emerald-500'
+                            }`}
+                          />
+                          <span>{product.is_sold_out ? 'Sold Out' : 'พร้อมขาย'}</span>
+                        </button>
+
+                        {/* Public Showcase visibility */}
+                        {product.is_active ? (
+                          <span className="text-[10px] text-slate-400 pl-1">
+                            แสดงในโชว์รูม
+                          </span>
+                        ) : (
+                          <span className="inline-flex items-center gap-1 rounded-full bg-slate-100 px-2 py-0.5 text-[10px] font-semibold text-slate-600">
+                            ซ่อนไว้
+                          </span>
+                        )}
+                      </div>
                     </td>
 
                     {/* Actions */}

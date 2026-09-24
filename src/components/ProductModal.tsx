@@ -70,12 +70,25 @@ export default function ProductModal({ product, onClose }: ProductModalProps) {
                   src={product.image_url}
                   alt={product.name}
                   fill
-                  className="object-cover"
+                  className={`object-cover ${
+                    product.is_sold_out ? 'grayscale contrast-[0.85] brightness-[0.92]' : ''
+                  }`}
                   onError={() => setImgError(true)}
                 />
               ) : (
                 <div className="flex h-full w-full items-center justify-center bg-slate-100 text-slate-400 min-h-[250px]">
                   <Tag className="h-16 w-16 stroke-[1.5]" />
+                </div>
+              )}
+
+              {/* Sold Out Overlay & Red Stamp */}
+              {product.is_sold_out && (
+                <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/40 backdrop-blur-[1px]">
+                  <div className="-rotate-12 rounded-xl border-2 border-red-500 bg-red-600/90 px-5 py-2 shadow-2xl shadow-red-950/50 backdrop-blur-md">
+                    <span className="text-base sm:text-lg font-black tracking-widest text-white uppercase drop-shadow-md select-none">
+                      SOLD OUT
+                    </span>
+                  </div>
                 </div>
               )}
             </div>
@@ -102,10 +115,17 @@ export default function ProductModal({ product, onClose }: ProductModalProps) {
                     ไซส์: {product.size_category}
                   </span>
                 )}
-                <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium sm:ml-auto mt-1 sm:mt-0">
-                  <CheckCircle2 className="h-3.5 w-3.5" />
-                  มีสินค้าพร้อมจัดแสดง
-                </span>
+                {product.is_sold_out ? (
+                  <span className="flex items-center gap-1 text-xs text-rose-600 font-bold bg-rose-50 border border-rose-200 px-2.5 py-0.5 rounded-full sm:ml-auto mt-1 sm:mt-0">
+                    <X className="h-3 w-3 text-rose-600 stroke-[3]" />
+                    สินค้าหมดแล้ว (Sold Out)
+                  </span>
+                ) : (
+                  <span className="flex items-center gap-1 text-xs text-emerald-600 font-medium sm:ml-auto mt-1 sm:mt-0">
+                    <CheckCircle2 className="h-3.5 w-3.5" />
+                    มีสินค้าพร้อมจัดแสดง
+                  </span>
+                )}
               </div>
 
               <h2 className="mt-3 text-xl sm:text-2xl font-bold tracking-tight text-slate-900 leading-snug">
@@ -113,10 +133,21 @@ export default function ProductModal({ product, onClose }: ProductModalProps) {
               </h2>
 
               <div className="mt-3 sm:mt-4">
-                <span className="text-xs font-medium text-slate-400">ราคาพิเศษ</span>
-                <p className="text-2xl sm:text-3xl font-extrabold text-indigo-600">
-                  {formattedPrice}
-                </p>
+                <span className="text-xs font-medium text-slate-400">ราคา</span>
+                {product.is_sold_out ? (
+                  <div className="flex items-center gap-3 mt-0.5">
+                    <p className="text-2xl sm:text-3xl font-extrabold text-slate-400 line-through">
+                      {formattedPrice}
+                    </p>
+                    <span className="rounded-lg bg-rose-100 px-2.5 py-1 text-xs font-extrabold text-rose-700 border border-rose-200">
+                      SOLD OUT
+                    </span>
+                  </div>
+                ) : (
+                  <p className="text-2xl sm:text-3xl font-extrabold text-indigo-600">
+                    {formattedPrice}
+                  </p>
+                )}
               </div>
 
               <div className="mt-4 sm:mt-6 flex-1 border-t border-slate-100 pt-4">

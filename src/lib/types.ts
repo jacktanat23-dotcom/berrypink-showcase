@@ -8,6 +8,7 @@ export interface Product {
   condition?: string | null; // 'มือ 1' | 'มือ 2'
   size_category?: string | null; // 'Adults' | 'Children' | 'Baby' | 'Newborn'
   is_active: boolean;
+  is_sold_out?: boolean;
   created_at: string;
   updated_at: string;
 }
@@ -48,6 +49,7 @@ export interface ProductFormData {
   condition: string;
   size_category: string;
   is_active: boolean;
+  is_sold_out?: boolean;
   image_url?: string | null;
 }
 

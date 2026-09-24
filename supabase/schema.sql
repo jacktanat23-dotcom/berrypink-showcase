@@ -16,15 +16,17 @@ CREATE TABLE IF NOT EXISTS public.products (
     condition TEXT DEFAULT 'มือ 1',
     size_category TEXT,
     is_active BOOLEAN DEFAULT true,
+    is_sold_out BOOLEAN DEFAULT false,
     created_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL,
     updated_at TIMESTAMP WITH TIME ZONE DEFAULT timezone('utc'::text, now()) NOT NULL
 );
 
 -- 2.1 Migration Script for Existing Tables (ALTER TABLE)
--- ถ้ามีตาราง products อยู่แล้ว ให้รันคำสั่ง 2 บรรทัดนี้ใน Supabase SQL Editor:
+-- ถ้ามีตาราง products อยู่แล้ว ให้รันคำสั่งใน Supabase SQL Editor:
 ALTER TABLE public.products 
 ADD COLUMN IF NOT EXISTS condition TEXT DEFAULT 'มือ 1',
-ADD COLUMN IF NOT EXISTS size_category TEXT;
+ADD COLUMN IF NOT EXISTS size_category TEXT,
+ADD COLUMN IF NOT EXISTS is_sold_out BOOLEAN DEFAULT false;
 
 -- 3. Auto-update updated_at Trigger
 CREATE OR REPLACE FUNCTION public.handle_updated_at()

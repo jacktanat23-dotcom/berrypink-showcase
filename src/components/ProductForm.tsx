@@ -25,6 +25,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
     condition: initialData?.condition || PRODUCT_CONDITIONS[0],
     size_category: initialData?.size_category || '',
     is_active: initialData ? initialData.is_active : true,
+    is_sold_out: initialData?.is_sold_out || false,
     image_url: initialData?.image_url || null,
   });
 
@@ -116,6 +117,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
         size_category: formData.size_category || null,
         image_url: finalImageUrl,
         is_active: formData.is_active,
+        is_sold_out: Boolean(formData.is_sold_out),
         updated_at: new Date().toISOString(),
       };
 
@@ -360,8 +362,34 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
             />
           </div>
 
+          {/* Sold Out Status Toggle */}
+          <div className="sm:col-span-2 rounded-2xl border border-slate-200 bg-slate-50/70 p-4 transition-all hover:bg-slate-50">
+            <div className="flex items-start gap-3">
+              <input
+                id="is_sold_out"
+                type="checkbox"
+                checked={Boolean(formData.is_sold_out)}
+                onChange={(e) => setFormData({ ...formData, is_sold_out: e.target.checked })}
+                className="mt-0.5 h-5 w-5 rounded border-slate-300 text-rose-600 focus:ring-rose-500 cursor-pointer accent-rose-600"
+              />
+              <div className="flex-1">
+                <label htmlFor="is_sold_out" className="text-sm font-bold text-slate-900 cursor-pointer select-none flex items-center gap-2">
+                  <span>ตั้งสถานะเป็นสินค้าหมดแล้ว (Sold Out)</span>
+                  {formData.is_sold_out && (
+                    <span className="rounded-md bg-rose-100 px-2 py-0.5 text-xs font-black text-rose-700 border border-rose-200">
+                      SOLD OUT
+                    </span>
+                  )}
+                </label>
+                <p className="text-xs text-slate-500 mt-1">
+                  เมื่อเปิดตัวเลือกนี้ หน้าร้านจะแสดงภาพสินค้าเป็นสีเทา พร้อมป้ายคำว่า &ldquo;SOLD OUT&rdquo; สีแดงตรงกลางภาพ
+                </p>
+              </div>
+            </div>
+          </div>
+
           {/* Active Status Toggle */}
-          <div className="sm:col-span-2 flex items-center gap-3 pt-2">
+          <div className="sm:col-span-2 flex items-center gap-3 pt-1">
             <input
               id="is_active"
               type="checkbox"

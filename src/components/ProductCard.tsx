@@ -24,7 +24,11 @@ export default function ProductCard({ product, onSelect }: ProductCardProps) {
   return (
     <div
       onClick={() => onSelect(product)}
-      className="group relative flex flex-col overflow-hidden rounded-2xl border border-slate-200/90 bg-white shadow-sm transition-all duration-300 hover:-translate-y-1 hover:border-slate-300 hover:shadow-xl cursor-pointer"
+      className={`group relative flex flex-col overflow-hidden rounded-2xl border transition-all duration-300 hover:-translate-y-1 hover:shadow-xl cursor-pointer ${
+        product.is_sold_out
+          ? 'border-slate-300/80 bg-slate-50/70 hover:border-slate-400'
+          : 'border-slate-200/90 bg-white hover:border-slate-300 shadow-sm'
+      }`}
     >
       {/* Product Image Container */}
       <div className="relative aspect-[4/3] w-full overflow-hidden bg-slate-100">
@@ -34,7 +38,11 @@ export default function ProductCard({ product, onSelect }: ProductCardProps) {
             alt={product.name}
             fill
             sizes="(max-width: 640px) 100vw, (max-width: 1024px) 50vw, 33vw"
-            className="object-cover transition-transform duration-500 group-hover:scale-105"
+            className={`object-cover transition-transform duration-500 ${
+              product.is_sold_out
+                ? 'grayscale contrast-[0.85] brightness-[0.92]'
+                : 'group-hover:scale-105'
+            }`}
             onError={() => setImgError(true)}
           />
         ) : (
@@ -43,22 +51,47 @@ export default function ProductCard({ product, onSelect }: ProductCardProps) {
           </div>
         )}
 
+        {/* Sold Out Overlay & Red Center Stamp */}
+        {product.is_sold_out && (
+          <div className="absolute inset-0 z-10 flex items-center justify-center bg-slate-900/35 backdrop-blur-[0.5px]">
+            <div className="-rotate-12 rounded-xl border-2 border-red-500/90 bg-red-600/90 px-4 py-1.5 shadow-xl shadow-red-950/40 backdrop-blur-md">
+              <span className="text-sm sm:text-base font-black tracking-widest text-white uppercase drop-shadow-md select-none">
+                SOLD OUT
+              </span>
+            </div>
+          </div>
+        )}
+
         {/* Category Badge */}
         {product.category && (
-          <span className="absolute top-3 left-3 rounded-full bg-white/95 backdrop-blur-md border border-purple-100/80 px-2.5 py-1 text-xs font-semibold text-purple-700 shadow-sm">
+          <span
+            className={`absolute top-3 left-3 rounded-full backdrop-blur-md px-2.5 py-1 text-xs font-semibold shadow-sm z-20 ${
+              product.is_sold_out
+                ? 'bg-slate-200/90 text-slate-700 border border-slate-300'
+                : 'bg-white/95 text-purple-700 border border-purple-100/80'
+            }`}
+          >
             {product.category}
           </span>
         )}
 
         {/* Quick Hover Action */}
-        <div className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-800 opacity-0 shadow-sm backdrop-blur-md transition-opacity duration-200 group-hover:opacity-100">
-          <ArrowUpRight className="h-4 w-4" />
-        </div>
+        {!product.is_sold_out && (
+          <div className="absolute top-3 right-3 flex h-8 w-8 items-center justify-center rounded-full bg-white/90 text-slate-800 opacity-0 shadow-sm backdrop-blur-md transition-opacity duration-200 group-hover:opacity-100 z-20">
+            <ArrowUpRight className="h-4 w-4" />
+          </div>
+        )}
       </div>
 
       {/* Product Information */}
       <div className="flex flex-1 flex-col p-5">
-        <h3 className="text-base font-semibold text-slate-900 transition-colors group-hover:text-indigo-600 line-clamp-1">
+        <h3
+          className={`text-base font-semibold transition-colors line-clamp-1 ${
+            product.is_sold_out
+              ? 'text-slate-600'
+              : 'text-slate-900 group-hover:text-indigo-600'
+          }`}
+        >
           {product.name}
         </h3>
 
@@ -68,7 +101,9 @@ export default function ProductCard({ product, onSelect }: ProductCardProps) {
             {product.condition && (
               <span
                 className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium border ${
-                  product.condition === 'มือ 1'
+                  product.is_sold_out
+                    ? 'bg-slate-100 text-slate-500 border-slate-200'
+                    : product.condition === 'มือ 1'
                     ? 'bg-emerald-50 text-emerald-700 border-emerald-200/70'
                     : 'bg-amber-50 text-amber-700 border-amber-200/70'
                 }`}
@@ -78,14 +113,24 @@ export default function ProductCard({ product, onSelect }: ProductCardProps) {
             )}
 
             {product.size_category && (
-              <span className="inline-flex items-center rounded-md bg-purple-50 px-2 py-0.5 text-[11px] font-medium text-purple-700 border border-purple-200/70">
+              <span
+                className={`inline-flex items-center rounded-md px-2 py-0.5 text-[11px] font-medium border ${
+                  product.is_sold_out
+                    ? 'bg-slate-100 text-slate-500 border-slate-200'
+                    : 'bg-purple-50 text-purple-700 border-purple-200/70'
+                }`}
+              >
                 {product.size_category}
               </span>
             )}
           </div>
         )}
 
-        <p className="mt-2 text-sm leading-relaxed text-slate-500 line-clamp-2">
+        <p
+          className={`mt-2 text-sm leading-relaxed line-clamp-2 ${
+            product.is_sold_out ? 'text-slate-400' : 'text-slate-500'
+          }`}
+        >
           {product.description || 'ไม่มีคำอธิบายรายละเอียดเพิ่มเติมสำหรับสินค้านี้'}
         </p>
 
@@ -93,16 +138,24 @@ export default function ProductCard({ product, onSelect }: ProductCardProps) {
         <div className="mt-4 flex items-center justify-between pt-3 border-t border-slate-100">
           <div>
             <span className="text-xs text-slate-400 font-medium">ราคา</span>
-            <div className="text-lg font-bold text-slate-900">
+            <div
+              className={`text-lg font-bold ${
+                product.is_sold_out ? 'text-slate-400 line-through' : 'text-slate-900'
+              }`}
+            >
               {formattedPrice}
             </div>
           </div>
 
           <button
             type="button"
-            className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-medium text-slate-700 transition-colors group-hover:bg-indigo-50 group-hover:text-indigo-600"
+            className={`rounded-lg px-3 py-1.5 text-xs font-semibold transition-colors ${
+              product.is_sold_out
+                ? 'bg-rose-50 text-rose-600 border border-rose-200/80 group-hover:bg-rose-100'
+                : 'bg-slate-100 text-slate-700 group-hover:bg-indigo-50 group-hover:text-indigo-600'
+            }`}
           >
-            ดูรายละเอียด
+            {product.is_sold_out ? 'สินค้าหมด' : 'ดูรายละเอียด'}
           </button>
         </div>
       </div>
