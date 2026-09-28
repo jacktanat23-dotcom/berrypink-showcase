@@ -18,8 +18,6 @@ import {
   HelpCircle,
 } from 'lucide-react';
 import { Shipment, getCarrierTrackingUrl, maskCustomerName } from '@/lib/types';
-import { MOCK_SHIPMENTS } from '@/lib/mock-data';
-import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
 
 function MaskedCustomerName({ name }: { name: string }) {
   if (!name) return null;
@@ -52,47 +50,15 @@ export default function TrackingPage() {
     setLoading(true);
     setHasSearched(true);
 
-    if (!isSupabaseConfigured()) {
-      // ค้นหาใน Mock Data
-      const q = cleanQuery.toLowerCase();
-      const matched = MOCK_SHIPMENTS.filter(
-        (s) =>
-          s.customer_name.toLowerCase().includes(q) ||
-          s.tracking_number.toLowerCase().includes(q)
-      );
-      setResults(matched);
-      setLoading(false);
-      return;
-    }
-
     try {
-      const supabase = createClient();
-      // ค้นหาแบบ Partial Match ไม่จำกัดตัวพิมพ์ใหญ่-เล็ก (ilike)
-      const { data, error } = await supabase
-        .from('shipments')
-        .select('*')
-        .or(`customer_name.ilike.%${cleanQuery}%,tracking_number.ilike.%${cleanQuery}%`)
-        .order('shipping_date', { ascending: false });
-
-      if (error) {
-        console.warn('Supabase search error, fallback to mock:', error.message);
-        const q = cleanQuery.toLowerCase();
-        const matched = MOCK_SHIPMENTS.filter(
-          (s) =>
-            s.customer_name.toLowerCase().includes(q) ||
-            s.tracking_number.toLowerCase().includes(q)
-        );
-        setResults(matched);
-      } else {
-        setResults(data || []);
-      }
+      // เรียกผ่าน Server API ที่ Mask ชื่อลูกค้าและตัดข้อมูลสินค้า (note) ออกก่อนส่งถึง Browser
+      const res = await fetch(`/api/tracking/search?q=${encodeURIComponent(cleanQuery)}`);
+      if (!res.ok) throw new Error('Search failed');
+      const data = await res.json();
+      setResults(data || []);
     } catch (err) {
       console.error('Search exception:', err);
-      const q = cleanQuery.toLowerCase();
-      const matched = MOCK_SHIPMENTS.filter((s) =>
-        s.customer_name.toLowerCase().includes(q)
-      );
-      setResults(matched);
+      setResults([]);
     } finally {
       setLoading(false);
     }
@@ -254,12 +220,6 @@ export default function TrackingPage() {
                           <div className="mt-1.5 flex items-center gap-2 text-xs text-slate-500">
                             <Calendar className="h-3.5 w-3.5 text-slate-400" />
                             <span>รอบส่งวันที่: {formatThaiDate(shipment.shipping_date)}</span>
-                            {shipment.note && (
-                              <>
-                                <span>•</span>
-                                <span className="text-slate-400">{shipment.note}</span>
-                              </>
-                            )}
                           </div>
                         </div>
 

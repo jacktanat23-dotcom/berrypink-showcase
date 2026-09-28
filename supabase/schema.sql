@@ -225,10 +225,48 @@ CREATE TRIGGER set_shipments_updated_at
 ALTER TABLE public.shipments ENABLE ROW LEVEL SECURITY;
 
 DROP POLICY IF EXISTS "Public can view shipments" ON public.shipments;
-CREATE POLICY "Public can view shipments"
+DROP POLICY IF EXISTS "Admins can view shipments" ON public.shipments;
+CREATE POLICY "Admins can view shipments"
     ON public.shipments
     FOR SELECT
+    TO authenticated
     USING (true);
+
+-- ฟังก์ชันค้นหาพัสดุสำหรับสาธารณะแบบปลอดภัย (SECURITY DEFINER)
+-- Mask ชื่อลูกค้า และไม่คืนค่า note (สินค้า) เพื่อความปลอดภัยสูงสุด
+CREATE OR REPLACE FUNCTION public.search_public_shipments(search_term TEXT)
+RETURNS TABLE (
+    id UUID,
+    customer_name TEXT,
+    shipping_date DATE,
+    carrier TEXT,
+    tracking_number TEXT
+) 
+LANGUAGE plpgsql
+SECURITY DEFINER
+SET search_path = public
+AS $$
+BEGIN
+    RETURN QUERY
+    SELECT 
+        s.id,
+        CASE 
+            WHEN length(trim(s.customer_name)) <= 3 THEN trim(s.customer_name) || '***'
+            ELSE substring(trim(s.customer_name) from 1 for 3) || '***'
+        END AS customer_name,
+        s.shipping_date,
+        s.carrier,
+        s.tracking_number
+    FROM public.shipments s
+    WHERE 
+        (length(trim(search_term)) >= 2) AND
+        (s.customer_name ILIKE '%' || search_term || '%' OR s.tracking_number ILIKE '%' || search_term || '%')
+    ORDER BY s.shipping_date DESC
+    LIMIT 30;
+END;
+$$;
+
+GRANT EXECUTE ON FUNCTION public.search_public_shipments(TEXT) TO anon, authenticated;
 
 DROP POLICY IF EXISTS "Admins can insert shipments" ON public.shipments;
 CREATE POLICY "Admins can insert shipments"

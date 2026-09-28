@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import './globals.css';
 import Navbar from '@/components/Navbar';
 import Footer from '@/components/Footer';
+import DevToolsBlocker from '@/components/DevToolsBlocker';
 
 export const metadata: Metadata = {
   metadataBase: new URL('https://berrypink-showcase.vercel.app'),
@@ -65,6 +66,7 @@ export default function RootLayout({
   return (
     <html lang="th" className="h-full">
       <body className="flex min-h-screen flex-col bg-slate-50 text-slate-900 antialiased selection:bg-indigo-500 selection:text-white">
+        <DevToolsBlocker />
         <Navbar />
         <main className="flex-1">
           {children}

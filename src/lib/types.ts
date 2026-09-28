@@ -112,6 +112,7 @@ export function getCarrierTrackingUrl(carrier: string, trackingNumber: string): 
 export function maskCustomerName(name: string): string {
   if (!name) return '';
   let trimmed = name.trim();
+  if (trimmed.includes('***')) return trimmed;
   let prefix = '';
   if (trimmed.startsWith('คุณ')) {
     prefix = 'คุณ ';
