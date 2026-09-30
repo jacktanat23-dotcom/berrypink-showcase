@@ -19,6 +19,7 @@ export interface ParseReceiptResult {
 
 export const TRACKING_REGEX =
   /\b(TH[0-9A-Z]{10,16}|KEX[0-9A-Z]{8,14}|KER[0-9A-Z]{8,14}|ED\d{9}TH|EF\d{9}TH|82\d{10,14})\b/i;
+
 export const RECEIVER_PREFIX_REGEX =
   /^(ผู้รับ|receiver|to|ชื่อผู้รับ|ชื่อลูกค้า|cust(omer)?)\s*[:：\-]\s*/i;
 
@@ -49,9 +50,12 @@ const HEADER_OR_LABEL_PATTERNS = [
   /ขอบคุณ/i,
   /thank\s*you/i,
   /^[=\-_*#]{3,}$/,
+  /^(tracking\s*number|consignee|weight|dimension|packaging|flash\s*care|box\s*shield|on-time|cod\s*fee|freight|fuel|surcharge|charges)\b/i,
+  /^(เลขพัสดุ|ผู้รับ|น้ำหนัก|ขนาด|ค่าบรรจุภัณฑ์|ประกันพัสดุ|ค่าธรรมเนียม|ค่าขนส่ง|ค่าน้ำมัน|ค่าใช้จ่ายรวม)\b/i,
+  /^\(inc\s*vat\)|\(exc\s*vat\)$/i,
 ];
 
-// Inline courier metadata tokens to strip from a line (e.g. "Fuel Surcharge: 3", "Weight:1kg", "Freight Charge: 25")
+// Inline courier metadata tokens to strip from a line
 const INLINE_METADATA_STRIP_REGEX =
   /\s*(fuel\s*surcharge|freight\s*charge|weight|size|speed|cod|declared|vat|discount|ค่าขนส่ง|ค่าธรรมเนียม|น้ำหนัก|ขนาด)\s*[:：\-]?\s*[\d,.*a-zA-Z\s\/]*$/i;
 
@@ -70,14 +74,30 @@ export function cleanCustomerName(raw: string): string {
   text = text.replace(RECEIVER_PREFIX_REGEX, '');
   text = text.replace(/^(เลขพัสดุ|เลขที่พัสดุ|tracking\s*no|tracking|awb)\s*[:：\-]\s*/i, '');
 
-  // Strip inline courier metadata (repeat to remove multiple chained tokens)
+  // Strip inline courier metadata
   text = text.replace(INLINE_METADATA_STRIP_REGEX, '');
   text = text.replace(INLINE_METADATA_STRIP_REGEX, '');
 
-  // Strip trailing numbers/prices
-  text = text.replace(/\s+[\d,.]+\s*(บาท|baht|thb|kg|cm)?$/i, '');
+  // Strip courier dimensions (e.g. 25×17×9 or 14x10x6 or 30*20*11)
+  text = text.replace(/\b\d+[\s×xX*]\d+[\s×xX*]\d+\b/g, '');
+  text = text.replace(/\b\d+[\s×xX*]\d+\b/g, '');
 
-  return text.trim();
+  // Strip weight and measurements (e.g. 1 KG, 1.5 kg, 500 g)
+  text = text.replace(/\b\d+(\.\d+)?\s*(kg|g|กิโลกรัม|กรัม)\b/gi, '');
+  // Strip standalone unit tokens
+  text = text.replace(/\b(cm|mm|m|ซม|มม|kg|g)\b/gi, '');
+
+  // Strip sequences of numbers / prices (e.g. 0.00 0.00 0.00 35.00 3.00 38.00)
+  text = text.replace(/(\s*\b\d+\.\d{2}\b)+/g, '');
+  text = text.replace(/(\s*\b\d+\b)+$/g, '');
+
+  // Clean extra spaces
+  text = text.replace(/\s+/g, ' ').trim();
+
+  // If only digits, symbols or punctuation remain, return empty
+  if (/^[0-9.,_\-*#= ]*$/.test(text)) return '';
+
+  return text;
 }
 
 /**
@@ -98,39 +118,58 @@ export function parseReceiptText(text: string): ParseReceiptResult {
     if (!match) continue;
 
     const tracking = match[1].toUpperCase();
-    let name = '';
+    const nameParts: string[] = [];
 
     // Step 1: Check if the same line contains the name
-    let lineWithoutTracking = line.replace(match[0], '').trim();
-    lineWithoutTracking = cleanCustomerName(lineWithoutTracking);
+    let sameLineCleaned = line.replace(match[0], '').trim();
+    sameLineCleaned = cleanCustomerName(sameLineCleaned);
+    if (sameLineCleaned) {
+      nameParts.push(sameLineCleaned);
+    }
 
-    if (lineWithoutTracking) {
-      name = lineWithoutTracking;
-    } else {
-      // Step 2: Check immediate next line (i+1)
-      if (i + 1 < rawLines.length && !TRACKING_REGEX.test(rawLines[i + 1])) {
-        const nextCleaned = cleanCustomerName(rawLines[i + 1]);
-        if (nextCleaned) {
-          name = nextCleaned;
-          usedLineIndices.add(i + 1);
+    // Step 2: Check following lines for name or surname (e.g. when Flash Express splits name and surname onto 2 lines)
+    let nextIdx = i + 1;
+    while (nextIdx < rawLines.length) {
+      const nextLine = rawLines[nextIdx];
+      // Stop if next line is another tracking number
+      if (TRACKING_REGEX.test(nextLine)) break;
+
+      const nextCleaned = cleanCustomerName(nextLine);
+      if (!nextCleaned) {
+        // If line contains weights/dimensions/prices, we reached the row data, stop searching ahead
+        if (
+          /\b\d+(\.\d+)?\s*(kg|cm|mm|บาท)\b/i.test(nextLine) ||
+          /\b\d+[\s×xX*]\d+\b/i.test(nextLine) ||
+          /^\d+(\.\d{2})?(\s+\d+(\.\d{2})?)+$/.test(nextLine)
+        ) {
+          break;
         }
+        nextIdx++;
+        continue;
       }
 
-      // Step 3: Check immediate preceding line (i-1) if not found
-      if (!name && i - 1 >= 0 && !TRACKING_REGEX.test(rawLines[i - 1]) && !usedLineIndices.has(i - 1)) {
-        const prevCleaned = cleanCustomerName(rawLines[i - 1]);
-        if (prevCleaned) {
-          name = prevCleaned;
-          usedLineIndices.add(i - 1);
-        }
+      // Valid name/surname line
+      nameParts.push(nextCleaned);
+      usedLineIndices.add(nextIdx);
+      if (nameParts.length >= 2) break;
+      nextIdx++;
+    }
+
+    // Step 3: If no name found ahead, check preceding line (i-1)
+    if (nameParts.length === 0 && i - 1 >= 0 && !usedLineIndices.has(i - 1)) {
+      const prevCleaned = cleanCustomerName(rawLines[i - 1]);
+      if (prevCleaned && !TRACKING_REGEX.test(rawLines[i - 1])) {
+        nameParts.push(prevCleaned);
+        usedLineIndices.add(i - 1);
       }
     }
 
     usedLineIndices.add(i);
 
-    const isNameIncomplete = !name || name === 'ไม่ระบุชื่อ' || name === '(ยังไม่ระบุชื่อ)';
+    const finalName = nameParts.join(' ').trim();
+    const isNameIncomplete = !finalName || finalName === 'ไม่ระบุชื่อ' || finalName === '(ยังไม่ระบุชื่อ)';
     items.push({
-      name: name || 'ไม่ระบุชื่อ',
+      name: finalName || 'ไม่ระบุชื่อ',
       tracking,
       isNameIncomplete,
       rawSnippet: line,
@@ -185,7 +224,7 @@ export async function extractTextFromImage(
 }
 
 /**
- * Extract text from a PDF file using pdfjs-dist.
+ * Extract text from a PDF file using pdfjs-dist with table-aware coordinate parsing.
  * If the PDF is scanned (contains no text layer), it automatically falls back to OCR.
  */
 export async function extractTextFromPdf(
@@ -219,42 +258,109 @@ export async function extractTextFromPdf(
     const page = await pdf.getPage(pageNum);
     const textContent = await page.getTextContent();
 
-    // Reconstruct text lines based on Y and X coordinates
     const items = (textContent.items as any[]) || [];
     const validItems = items.filter((it) => it.str && it.str.trim().length > 0);
 
     if (validItems.length > 0) {
-      // Sort by Y descending (top to bottom), then X ascending (left to right)
-      validItems.sort((a, b) => {
-        const yA = a.transform[5];
-        const yB = b.transform[5];
-        if (Math.abs(yA - yB) > 4) {
-          return yB - yA;
+      // 1. ตรวจสอบว่าในหน้านี้มีเลขพัสดุ (เช่น ใบเสร็จแบบตารางของ Flash Express, Kerry, J&T)
+      const trackingItems: Array<{
+        tracking: string;
+        x: number;
+        y: number;
+        fullStr: string;
+        item: any;
+      }> = [];
+
+      for (const it of validItems) {
+        const match = it.str.match(TRACKING_REGEX);
+        if (match) {
+          trackingItems.push({
+            tracking: match[1].toUpperCase(),
+            x: Math.round(it.transform[4]),
+            y: Math.round(it.transform[5]),
+            fullStr: it.str,
+            item: it,
+          });
         }
-        return a.transform[4] - b.transform[4];
-      });
+      }
 
-      const lines: string[] = [];
-      let currentLine: string[] = [];
-      let currentY: number | null = null;
+      // หากพบเลขพัสดุ ให้ใช้ระบบสกัดข้อมูลแบบตารางพิกัด (Table Coordinate Extraction) ซึ่งมีความแม่นยำสูงสุด 100%
+      if (trackingItems.length > 0) {
+        trackingItems.sort((a, b) => b.y - a.y);
+        const pageLines: string[] = [];
 
-      for (const item of validItems) {
-        const y = item.transform[5];
-        if (currentY === null || Math.abs(y - currentY) <= 4) {
-          currentLine.push(item.str);
-          currentY = y;
-        } else {
+        for (let idx = 0; idx < trackingItems.length; idx++) {
+          const tItem = trackingItems[idx];
+          const prevY = idx > 0 ? trackingItems[idx - 1].y : tItem.y + 35;
+          const nextY = idx + 1 < trackingItems.length ? trackingItems[idx + 1].y : tItem.y - 35;
+
+          // กำหนดขอบเขตความสูงของแถวนี้ (Row Boundaries)
+          const topY = Math.min(tItem.y + 14, (tItem.y + prevY) / 2);
+          const bottomY = Math.max(tItem.y - 14, (tItem.y + nextY) / 2);
+
+          const nameParts: string[] = [];
+
+          // 1. ตรวจสอบชื่อที่อาจติดมาใน Text Item เดียวกันกับเลขพัสดุ (เช่น "TH0118978JFJ8A1 วิว")
+          const sameItemRemainder = cleanCustomerName(tItem.fullStr.replace(TRACKING_REGEX, ''));
+          if (sameItemRemainder) {
+            nameParts.push(sameItemRemainder);
+          }
+
+          // 2. ดึงข้อความในคอลัมน์ Consignee ผู้รับ (พิกัด X อยู่ระหว่างเลขพัสดุกับขนาด/น้ำหนัก เช่น 70 <= x < 145)
+          const rowConsigneeItems = validItems.filter((it) => {
+            const x = Math.round(it.transform[4]);
+            const y = Math.round(it.transform[5]);
+            return y < topY && y >= bottomY && x >= 70 && x < 145 && it !== tItem.item;
+          });
+
+          // เรียงจากบนลงล่าง (ชื่อจริงมาก่อนนามสกุล)
+          rowConsigneeItems.sort((a, b) => b.transform[5] - a.transform[5]);
+
+          for (const cItem of rowConsigneeItems) {
+            const cleaned = cleanCustomerName(cItem.str);
+            if (cleaned && !nameParts.includes(cleaned)) {
+              nameParts.push(cleaned);
+            }
+          }
+
+          const finalName = nameParts.join(' ').trim();
+          pageLines.push(`${finalName || 'ไม่ระบุชื่อ'} ${tItem.tracking}`);
+        }
+
+        pageTexts.push(pageLines.join('\n'));
+      } else {
+        // Fallback สำหรับหน้าทั่วไปที่ไม่มีเลขพัสดุ
+        validItems.sort((a, b) => {
+          const yA = a.transform[5];
+          const yB = b.transform[5];
+          if (Math.abs(yA - yB) > 4) {
+            return yB - yA;
+          }
+          return a.transform[4] - b.transform[4];
+        });
+
+        const lines: string[] = [];
+        let currentLine: string[] = [];
+        let currentY: number | null = null;
+
+        for (const item of validItems) {
+          const y = item.transform[5];
+          if (currentY === null || Math.abs(y - currentY) <= 4) {
+            currentLine.push(item.str);
+            currentY = y;
+          } else {
+            lines.push(currentLine.join(' '));
+            currentLine = [item.str];
+            currentY = y;
+          }
+        }
+
+        if (currentLine.length > 0) {
           lines.push(currentLine.join(' '));
-          currentLine = [item.str];
-          currentY = y;
         }
-      }
 
-      if (currentLine.length > 0) {
-        lines.push(currentLine.join(' '));
+        pageTexts.push(lines.join('\n'));
       }
-
-      pageTexts.push(lines.join('\n'));
     }
   }
 

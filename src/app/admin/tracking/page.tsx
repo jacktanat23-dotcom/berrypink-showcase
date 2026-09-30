@@ -37,6 +37,7 @@ import {
   extractTextFromImage,
   parseReceiptText,
   formatItemsToBulkText,
+  cleanCustomerName,
   TRACKING_REGEX,
 } from '@/lib/receipt-parser';
 
@@ -252,13 +253,14 @@ export default function AdminTrackingPage() {
       }
 
       if (tracking) {
+        const cleanedName = cleanCustomerName(name) || name.trim();
         const isWarning =
-          !name ||
-          name === 'ไม่ระบุชื่อ' ||
-          name === '(ยังไม่ระบุชื่อ)' ||
-          name.includes('กรุณาระบุ');
+          !cleanedName ||
+          cleanedName === 'ไม่ระบุชื่อ' ||
+          cleanedName === '(ยังไม่ระบุชื่อ)' ||
+          cleanedName.includes('กรุณาระบุ');
         parsed.push({
-          name: name || '(ยังไม่ระบุชื่อ)',
+          name: cleanedName || '(ยังไม่ระบุชื่อ)',
           tracking,
           isWarning,
         });
