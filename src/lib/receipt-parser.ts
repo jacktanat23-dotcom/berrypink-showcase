@@ -1,6 +1,6 @@
 /**
  * Utility for extracting tracking numbers and customer names from receipts (PDF / Images)
- * Supports Flash Express and other couriers (Kerry, J&T, Thailand Post).
+ * Supports Flash Express (both Columnar Table and List/Compact formats), Kerry, J&T, Thailand Post.
  */
 
 export interface ParsedReceiptItem {
@@ -51,7 +51,9 @@ const HEADER_OR_LABEL_PATTERNS = [
   /thank\s*you/i,
   /^[=\-_*#]{3,}$/,
   /^(tracking\s*number|consignee|weight|dimension|packaging|flash\s*care|box\s*shield|on-time|cod\s*fee|freight|fuel|surcharge|charges)\b/i,
-  /^(เลขพัสดุ|ผู้รับ|น้ำหนัก|ขนาด|ค่าบรรจุภัณฑ์|ประกันพัสดุ|ค่าธรรมเนียม|ค่าขนส่ง|ค่าน้ำมัน|ค่าใช้จ่ายรวม)\b/i,
+  /^(เลขพัสดุ|ผู้รับ|น้ำหนัก|ขนาด|ค่าบรรจุภัณฑ์|ประกันพัสดุ|ค่าธรรมเนียม|ค่าขนส่ง|ค่าน้ำมัน|ค่าใช้จ่ายรวม)/i,
+  /^(ยอดรวม|total|ภาษีมูลค่าเพิ่ม|ปัดเศษ|จำนวนเงินสุทธิ|net\s*amount)/i,
+  /^(ข้อกำหนด|เงื่อนไข|ความรับผิดชอบ|หมายเหตุ|terms?\b|conditions?\b|disclaimer)/i,
   /^\(inc\s*vat\)|\(exc\s*vat\)$/i,
 ];
 
@@ -74,22 +76,30 @@ export function cleanCustomerName(raw: string): string {
   text = text.replace(RECEIVER_PREFIX_REGEX, '');
   text = text.replace(/^(เลขพัสดุ|เลขที่พัสดุ|tracking\s*no|tracking|awb)\s*[:：\-]\s*/i, '');
 
-  // Strip inline courier metadata
+  // Strip inline courier metadata (repeat to remove chained tokens)
   text = text.replace(INLINE_METADATA_STRIP_REGEX, '');
   text = text.replace(INLINE_METADATA_STRIP_REGEX, '');
 
-  // Strip courier dimensions (e.g. 25×17×9 or 14x10x6 or 30*20*11)
-  text = text.replace(/\b\d+[\s×xX*]\d+[\s×xX*]\d+\b/g, '');
+  // Strip courier dimensions (e.g. 25×17×9 or 14x10x6 or 17*25*9cm)
+  text = text.replace(/\b(size\s*[:：\-]?\s*)?\d+[\s×xX*]\d+[\s×xX*]\d+\s*(cm|mm)?\b/gi, '');
   text = text.replace(/\b\d+[\s×xX*]\d+\b/g, '');
 
   // Strip weight and measurements (e.g. 1 KG, 1.5 kg, 500 g)
-  text = text.replace(/\b\d+(\.\d+)?\s*(kg|g|กิโลกรัม|กรัม)\b/gi, '');
+  text = text.replace(/\b(weight\s*[:：\-]?\s*)?\d+(\.\d+)?\s*(kg|g|กิโลกรัม|กรัม)\b/gi, '');
   // Strip standalone unit tokens
   text = text.replace(/\b(cm|mm|m|ซม|มม|kg|g)\b/gi, '');
 
   // Strip sequences of numbers / prices (e.g. 0.00 0.00 0.00 35.00 3.00 38.00)
   text = text.replace(/(\s*\b\d+\.\d{2}\b)+/g, '');
   text = text.replace(/(\s*\b\d+\b)+$/g, '');
+
+  // Normalize Flash font ligatures
+  text = text.replace(/ิϧง/g, 'ิ่ง');
+  text = text.replace(/ิϧ/g, 'ิ่');
+  text = text.replace(/ีϧ/g, 'ี่');
+  text = text.replace(/ืϧ/g, 'ึ่ง');
+  text = text.replace(/ϧ/g, '่');
+  text = text.replace(/Ϩ/g, '้');
 
   // Clean extra spaces
   text = text.replace(/\s+/g, ' ').trim();
@@ -127,32 +137,35 @@ export function parseReceiptText(text: string): ParseReceiptResult {
       nameParts.push(sameLineCleaned);
     }
 
-    // Step 2: Check following lines for name or surname (e.g. when Flash Express splits name and surname onto 2 lines)
-    let nextIdx = i + 1;
-    while (nextIdx < rawLines.length) {
-      const nextLine = rawLines[nextIdx];
-      // Stop if next line is another tracking number
-      if (TRACKING_REGEX.test(nextLine)) break;
+    // Step 2: Check following lines for name or surname if not already having full name (>= 2 words)
+    if (nameParts.length === 0 || sameLineCleaned.split(/\s+/).length < 2) {
+      let nextIdx = i + 1;
+      while (nextIdx < rawLines.length) {
+        const nextLine = rawLines[nextIdx];
+        // Stop if next line is another tracking number
+        if (TRACKING_REGEX.test(nextLine)) break;
 
-      const nextCleaned = cleanCustomerName(nextLine);
-      if (!nextCleaned) {
-        // If line contains weights/dimensions/prices, we reached the row data, stop searching ahead
-        if (
-          /\b\d+(\.\d+)?\s*(kg|cm|mm|บาท)\b/i.test(nextLine) ||
-          /\b\d+[\s×xX*]\d+\b/i.test(nextLine) ||
-          /^\d+(\.\d{2})?(\s+\d+(\.\d{2})?)+$/.test(nextLine)
-        ) {
-          break;
+        const nextCleaned = cleanCustomerName(nextLine);
+        if (!nextCleaned) {
+          // If line contains weights/dimensions/prices, we reached the row data, stop searching ahead
+          if (
+            /\b\d+(\.\d+)?\s*(kg|cm|mm|บาท)\b/i.test(nextLine) ||
+            /\b\d+[\s×xX*]\d+\b/i.test(nextLine) ||
+            /^\d+(\.\d{2})?(\s+\d+(\.\d{2})?)+$/.test(nextLine) ||
+            /^(size|weight|freight|charges)\s*[:：\-]/i.test(nextLine)
+          ) {
+            break;
+          }
+          nextIdx++;
+          continue;
         }
-        nextIdx++;
-        continue;
-      }
 
-      // Valid name/surname line
-      nameParts.push(nextCleaned);
-      usedLineIndices.add(nextIdx);
-      if (nameParts.length >= 2) break;
-      nextIdx++;
+        // Valid name part
+        nameParts.push(nextCleaned);
+        usedLineIndices.add(nextIdx);
+        if (nameParts.length >= 2) break;
+        nextIdx++;
+      }
     }
 
     // Step 3: If no name found ahead, check preceding line (i-1)
@@ -224,7 +237,8 @@ export async function extractTextFromImage(
 }
 
 /**
- * Extract text from a PDF file using pdfjs-dist with table-aware coordinate parsing.
+ * Extract text from a PDF file using pdfjs-dist.
+ * Supports both Multi-column table receipts (Layout 1) and Sequential list receipts (Layout 2).
  * If the PDF is scanned (contains no text layer), it automatically falls back to OCR.
  */
 export async function extractTextFromPdf(
@@ -249,7 +263,7 @@ export async function extractTextFromPdf(
 
   const pdf = await loadingTask.promise;
   const numPages = pdf.numPages;
-  const pageTexts: string[] = [];
+  const allDocLines: string[] = [];
 
   for (let pageNum = 1; pageNum <= numPages; pageNum++) {
     const pct = 20 + Math.round((pageNum / numPages) * 60);
@@ -260,111 +274,100 @@ export async function extractTextFromPdf(
 
     const items = (textContent.items as any[]) || [];
     const validItems = items.filter((it) => it.str && it.str.trim().length > 0);
+    if (validItems.length === 0) continue;
 
-    if (validItems.length > 0) {
-      // 1. ตรวจสอบว่าในหน้านี้มีเลขพัสดุ (เช่น ใบเสร็จแบบตารางของ Flash Express, Kerry, J&T)
-      const trackingItems: Array<{
-        tracking: string;
-        x: number;
-        y: number;
-        fullStr: string;
-        item: any;
-      }> = [];
+    // ตรวจสอบว่าหน้านี้มี Header คอลัมน์ Consignee / ผู้รับ หรือไม่ (เพื่อแยก Format A กับ Format B)
+    const hasConsigneeHeader = validItems.some((it) => /consignee|ผู้รับ/i.test(it.str));
 
-      for (const it of validItems) {
-        const match = it.str.match(TRACKING_REGEX);
-        if (match) {
-          trackingItems.push({
-            tracking: match[1].toUpperCase(),
-            x: Math.round(it.transform[4]),
-            y: Math.round(it.transform[5]),
-            fullStr: it.str,
-            item: it,
-          });
-        }
+    // รวบรวมหมายเลขพัสดุในหน้านี้
+    const trackingItems: Array<{
+      tracking: string;
+      x: number;
+      y: number;
+      fullStr: string;
+      item: any;
+    }> = [];
+
+    for (const it of validItems) {
+      const match = it.str.match(TRACKING_REGEX);
+      if (match) {
+        trackingItems.push({
+          tracking: match[1].toUpperCase(),
+          x: Math.round(it.transform[4]),
+          y: Math.round(it.transform[5]),
+          fullStr: it.str,
+          item: it,
+        });
       }
+    }
 
-      // หากพบเลขพัสดุ ให้ใช้ระบบสกัดข้อมูลแบบตารางพิกัด (Table Coordinate Extraction) ซึ่งมีความแม่นยำสูงสุด 100%
-      if (trackingItems.length > 0) {
-        trackingItems.sort((a, b) => b.y - a.y);
-        const pageLines: string[] = [];
+    if (hasConsigneeHeader && trackingItems.length > 0) {
+      // Format A: ตารางหลายคอลัมน์ (เช่น Flash Express Temporary Receipt)
+      // เลขพัสดุอยู่คอลัมน์ 1 (x ≈ 45), ชื่อผู้รับอยู่คอลัมน์ 2 (x: 70..145)
+      trackingItems.sort((a, b) => b.y - a.y);
+      for (let idx = 0; idx < trackingItems.length; idx++) {
+        const tItem = trackingItems[idx];
+        const prevY = idx > 0 ? trackingItems[idx - 1].y : tItem.y + 35;
+        const nextY = idx + 1 < trackingItems.length ? trackingItems[idx + 1].y : tItem.y - 35;
 
-        for (let idx = 0; idx < trackingItems.length; idx++) {
-          const tItem = trackingItems[idx];
-          const prevY = idx > 0 ? trackingItems[idx - 1].y : tItem.y + 35;
-          const nextY = idx + 1 < trackingItems.length ? trackingItems[idx + 1].y : tItem.y - 35;
+        const topY = Math.min(tItem.y + 14, (tItem.y + prevY) / 2);
+        const bottomY = Math.max(tItem.y - 14, (tItem.y + nextY) / 2);
 
-          // กำหนดขอบเขตความสูงของแถวนี้ (Row Boundaries)
-          const topY = Math.min(tItem.y + 14, (tItem.y + prevY) / 2);
-          const bottomY = Math.max(tItem.y - 14, (tItem.y + nextY) / 2);
+        const nameParts: string[] = [];
+        const sameItemRemainder = cleanCustomerName(tItem.fullStr.replace(TRACKING_REGEX, ''));
+        if (sameItemRemainder) nameParts.push(sameItemRemainder);
 
-          const nameParts: string[] = [];
-
-          // 1. ตรวจสอบชื่อที่อาจติดมาใน Text Item เดียวกันกับเลขพัสดุ (เช่น "TH0118978JFJ8A1 วิว")
-          const sameItemRemainder = cleanCustomerName(tItem.fullStr.replace(TRACKING_REGEX, ''));
-          if (sameItemRemainder) {
-            nameParts.push(sameItemRemainder);
-          }
-
-          // 2. ดึงข้อความในคอลัมน์ Consignee ผู้รับ (พิกัด X อยู่ระหว่างเลขพัสดุกับขนาด/น้ำหนัก เช่น 70 <= x < 145)
-          const rowConsigneeItems = validItems.filter((it) => {
-            const x = Math.round(it.transform[4]);
-            const y = Math.round(it.transform[5]);
-            return y < topY && y >= bottomY && x >= 70 && x < 145 && it !== tItem.item;
-          });
-
-          // เรียงจากบนลงล่าง (ชื่อจริงมาก่อนนามสกุล)
-          rowConsigneeItems.sort((a, b) => b.transform[5] - a.transform[5]);
-
-          for (const cItem of rowConsigneeItems) {
-            const cleaned = cleanCustomerName(cItem.str);
-            if (cleaned && !nameParts.includes(cleaned)) {
-              nameParts.push(cleaned);
-            }
-          }
-
-          const finalName = nameParts.join(' ').trim();
-          pageLines.push(`${finalName || 'ไม่ระบุชื่อ'} ${tItem.tracking}`);
-        }
-
-        pageTexts.push(pageLines.join('\n'));
-      } else {
-        // Fallback สำหรับหน้าทั่วไปที่ไม่มีเลขพัสดุ
-        validItems.sort((a, b) => {
-          const yA = a.transform[5];
-          const yB = b.transform[5];
-          if (Math.abs(yA - yB) > 4) {
-            return yB - yA;
-          }
-          return a.transform[4] - b.transform[4];
+        const rowConsigneeItems = validItems.filter((it) => {
+          const x = Math.round(it.transform[4]);
+          const y = Math.round(it.transform[5]);
+          return y < topY && y >= bottomY && x >= 70 && x < 145 && it !== tItem.item;
         });
 
-        const lines: string[] = [];
-        let currentLine: string[] = [];
-        let currentY: number | null = null;
+        rowConsigneeItems.sort((a, b) => b.transform[5] - a.transform[5]);
 
-        for (const item of validItems) {
-          const y = item.transform[5];
-          if (currentY === null || Math.abs(y - currentY) <= 4) {
-            currentLine.push(item.str);
-            currentY = y;
-          } else {
-            lines.push(currentLine.join(' '));
-            currentLine = [item.str];
-            currentY = y;
+        for (const cItem of rowConsigneeItems) {
+          const cleaned = cleanCustomerName(cItem.str);
+          if (cleaned && !nameParts.includes(cleaned)) {
+            nameParts.push(cleaned);
           }
         }
 
-        if (currentLine.length > 0) {
-          lines.push(currentLine.join(' '));
-        }
-
-        pageTexts.push(lines.join('\n'));
+        const finalName = nameParts.join(' ').trim();
+        allDocLines.push(`${finalName || 'ไม่ระบุชื่อ'} ${tItem.tracking}`);
       }
+    } else {
+      // Format B: ใบเสร็จแบบรายการบรรทัดต่อบรรทัด (เช่น Flash Express ใบเสร็จรับเงินอย่างย่อ)
+      // เรียงลำดับบรรทัดตาม Y บนลงล่าง, X ซ้ายไปขวา
+      validItems.sort((a, b) => {
+        const yDiff = b.transform[5] - a.transform[5];
+        if (Math.abs(yDiff) > 3) return yDiff;
+        return a.transform[4] - b.transform[4];
+      });
+
+      const pageLines: string[] = [];
+      let currentLine: string[] = [];
+      let currentY: number | null = null;
+
+      for (const item of validItems) {
+        const y = item.transform[5];
+        if (currentY === null || Math.abs(y - currentY) <= 3) {
+          currentLine.push(item.str.trim());
+          currentY = y;
+        } else {
+          pageLines.push(currentLine.join(' '));
+          currentLine = [item.str.trim()];
+          currentY = y;
+        }
+      }
+      if (currentLine.length > 0) {
+        pageLines.push(currentLine.join(' '));
+      }
+
+      allDocLines.push(...pageLines);
     }
   }
 
-  const combinedText = pageTexts.join('\n').trim();
+  const combinedText = allDocLines.join('\n').trim();
 
   // If PDF has embedded text with tracking numbers or sufficient text, return it
   if (combinedText.length > 20 && TRACKING_REGEX.test(combinedText)) {
