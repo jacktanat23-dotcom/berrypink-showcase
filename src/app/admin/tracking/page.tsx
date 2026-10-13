@@ -453,17 +453,38 @@ export default function AdminTrackingPage() {
     return dates.sort((a, b) => b.localeCompare(a));
   }, [shipments]);
 
-  // กรองรายการตามคำค้นหาและวันที่
+  // กรองรายการตามคำค้นหาและวันที่ (รองรับทั้งชื่อจริง, นามสกุล, ชื่อเต็ม, สลับ ฎ/ฏ)
   const filteredShipments = useMemo(() => {
+    const rawQ = searchQuery.trim().toLowerCase();
     return shipments.filter((s) => {
-      const matchesSearch =
-        s.customer_name.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        s.tracking_number.toLowerCase().includes(searchQuery.toLowerCase()) ||
-        (s.note && s.note.toLowerCase().includes(searchQuery.toLowerCase()));
-
       const matchesDate = selectedDate === 'all' || s.shipping_date === selectedDate;
+      if (!matchesDate) return false;
+      if (!rawQ) return true;
 
-      return matchesSearch && matchesDate;
+      const name = s.customer_name.toLowerCase();
+      const tracking = s.tracking_number.toLowerCase().replace(/\s+/g, '');
+      const note = (s.note || '').toLowerCase();
+      const compactQ = rawQ.replace(/\s+/g, '');
+
+      // 1. ตรวจสอบตรงๆ ทั้งสองทิศทาง (ชื่อมีคำค้น หรือ คำค้นมีชื่อในตาราง)
+      if (
+        name.includes(rawQ) ||
+        (name.length >= 2 && rawQ.includes(name)) ||
+        tracking.includes(compactQ) ||
+        note.includes(rawQ)
+      ) {
+        return true;
+      }
+
+      // 2. ตรวจสอบแบบแยกคำ (Tokens) เช่น ลูกค้าพิมพ์ชื่อ-นามสกุล แต่ในตารางมีแค่ชื่อจริง หรือสลับ ฎ <-> ฏ
+      const words = rawQ.split(/\s+/).filter((w) => w.length >= 2);
+      const nameNorm = name.replace(/ฎ/g, 'ฏ');
+      const tokenMatch = words.some((w) => {
+        const wNorm = w.replace(/ฎ/g, 'ฏ');
+        return nameNorm.includes(wNorm) || tracking.includes(w) || note.includes(w);
+      });
+
+      return tokenMatch;
     });
   }, [shipments, searchQuery, selectedDate]);
 
