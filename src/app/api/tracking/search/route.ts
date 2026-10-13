@@ -5,26 +5,61 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
+const TITLE_PREFIXES = [
+  'นางสาว',
+  'เด็กหญิง',
+  'เด็กชาย',
+  'คุณ',
+  'น้อง',
+  'พี่',
+  'นาง',
+  'นาย',
+  'ด.ญ.',
+  'ด.ช.',
+  'น.ส.',
+];
+
 /**
- * แตกคำค้นหาและสร้างตัวแปรคำค้นหา (Search Terms & Variants)
- * รองรับทั้ง:
- * 1. ลูกค้าค้นหาชื่อเต็ม (ชื่อ-นามสกุล) แต่ฐานข้อมูลมีเฉพาะชื่อจริง หรือนามสกุล
- * 2. ลูกค้าพิมพ์คำนำหน้า เช่น คุณ, น้อง, พี่, นางสาว
- * 3. ลูกค้าพิมพ์สลับตัวอักษร ฎ (U+0E0E) และ ฏ (U+0E0F)
- * 4. ค้นหาด้วยหมายเลขพัสดุ (ทั้งแบบเว้นวรรคและไม่เว้นวรรค)
+ * สร้างตัวแปรอักขระไทย (Thai Character Variants)
+ * 1. สระอำ: รองรับทั้ง Composed (\u0E33) และ Decomposed (\u0E4D\u0E32 นิคหิต + สระอา จากฟอนต์ PDF)
+ * 2. ตัวอักษร ฎ (U+0E0E) และ ฏ (U+0E0F) ที่ลูกค้ามักพิมพ์สลับกัน
+ */
+function getThaiVariants(text: string): string[] {
+  const set = new Set<string>();
+  const t = text.trim();
+  if (!t) return [];
+  set.add(t);
+
+  // สลับสระอำ ผสม (\u0E33) <-> แยก (\u0E4D\u0E32)
+  const composed = t.replace(/\u0E4D\u0E32/g, '\u0E33');
+  const decomposed = t.replace(/\u0E33/g, '\u0E4D\u0E32');
+
+  [composed, decomposed].forEach((s) => {
+    set.add(s);
+    if (s.includes('ฎ')) set.add(s.replace(/ฎ/g, 'ฏ'));
+    if (s.includes('ฏ')) set.add(s.replace(/ฏ/g, 'ฎ'));
+  });
+
+  return Array.from(set);
+}
+
+/**
+ * สร้างคำค้นหาสำหรับยิงค้นหาพัสดุ
+ * - กรณีค้นหาด้วยหมายเลขพัสดุ: ค้นหาด้วยรหัสพัสดุตรงๆ
+ * - กรณีค้นหาด้วยชื่อเต็ม (เช่น "ณัฏฐณิชา กำเนิดมณี"): จะค้นหาด้วย "ประโยคเต็ม" และตัวแปรอักขระของทั้งประโยค
+ *   (ไม่แยกคำเดี่ยวทำ OR เพื่อป้องกันกรณีลูกค้านามสกุล "กำเนิดมณี" แต่พิมพ์ "กำเนิดพลอย" แล้วหลุดไปเจอ)
+ * - กรณีค้นหาด้วยชื่อจริงคำเดียว (เช่น "ณัฏฐณิชา") หรือ นามสกุลคำเดียว (เช่น "กำเนิดมณี"):
+ *   จะค้นหาเฉพาะคำนั้นๆ และตัวแปรอักขระของคำนั้น
  */
 function generateSearchTerms(rawQuery: string): {
   terms: string[];
   isTrackingNumber: boolean;
-  tokens: string[];
-  firstWord: string;
+  cleanQuery: string;
 } {
   const q = rawQuery.trim();
   if (!q || q.length < 2) {
-    return { terms: [], isTrackingNumber: false, tokens: [], firstWord: '' };
+    return { terms: [], isTrackingNumber: false, cleanQuery: '' };
   }
-
-  const terms = new Set<string>();
 
   // 1. ตรวจสอบรูปแบบหมายเลขพัสดุ
   const compact = q.replace(/\s+/g, '').toUpperCase();
@@ -33,142 +68,54 @@ function generateSearchTerms(rawQuery: string): {
     /^(TH|KEX|ED|J&T|SPX|SHP)/i.test(compact);
 
   if (isTracking) {
-    terms.add(compact);
-    if (compact !== q.toUpperCase()) {
-      terms.add(q);
-    }
+    return {
+      terms: compact !== q.toUpperCase() ? [compact, q] : [compact],
+      isTrackingNumber: true,
+      cleanQuery: compact,
+    };
   }
 
-  // 2. ล้างอักขระพิเศษ สัญลักษณ์ และวงเล็บ
+  // 2. ทำความสะอาดข้อความค้นหาชื่อลูกค้า
   const cleaned = q
     .replace(/[()\-–—_.,/\\#[\]{}*~^]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim();
 
-  terms.add(q);
-  if (cleaned.length >= 2) {
-    terms.add(cleaned);
-  }
+  const terms = new Set<string>();
 
-  // 3. คำนำหน้าชื่อ (Thai Titles & Honorifics)
-  const TITLE_PREFIXES = [
-    'นางสาว',
-    'เด็กหญิง',
-    'เด็กชาย',
-    'คุณ',
-    'น้อง',
-    'พี่',
-    'นาง',
-    'นาย',
-    'ด.ญ.',
-    'ด.ช.',
-    'น.ส.',
-  ];
+  const addPhraseVariants = (phrase: string) => {
+    getThaiVariants(phrase).forEach((v) => terms.add(v));
 
-  const addVariants = (word: string) => {
-    if (!word || word.length < 2) return;
-    terms.add(word);
-
-    // ตัดคำนำหน้า
+    // ตัดคำนำหน้าชื่อ (ถ้ามี) เช่น คุณ, น้อง, พี่, นางสาว
     for (const prefix of TITLE_PREFIXES) {
-      if (word.startsWith(prefix) && word.length - prefix.length >= 2) {
-        const stripped = word.slice(prefix.length).trim();
+      if (phrase.startsWith(prefix) && phrase.length - prefix.length >= 2) {
+        const stripped = phrase.slice(prefix.length).trim();
         if (stripped.length >= 2) {
-          terms.add(stripped);
-          addVariants(stripped);
+          getThaiVariants(stripped).forEach((v) => terms.add(v));
         }
       }
     }
-
-    // สลับตัวอักษร ฎ (U+0E0E) และ ฏ (U+0E0F)
-    if (word.includes('ฎ')) {
-      terms.add(word.replace(/ฎ/g, 'ฏ'));
-    }
-    if (word.includes('ฏ')) {
-      terms.add(word.replace(/ฏ/g, 'ฎ'));
-    }
   };
 
-  // 4. แตกคำตามช่องว่าง (Tokens) สำหรับกรณีค้นหาชื่อ นามสกุล หรือชื่อเล่น
-  const words = cleaned.split(/\s+/).filter((w) => w.length >= 2);
-  for (const w of words) {
-    addVariants(w);
-  }
-
-  // ตัวแปรของข้อความเต็ม
-  if (cleaned.includes('ฎ')) terms.add(cleaned.replace(/ฎ/g, 'ฏ'));
-  if (cleaned.includes('ฏ')) terms.add(cleaned.replace(/ฏ/g, 'ฎ'));
+  addPhraseVariants(cleaned);
 
   return {
     terms: Array.from(terms),
-    isTrackingNumber: isTracking,
-    tokens: words,
-    firstWord: words[0] || '',
+    isTrackingNumber: false,
+    cleanQuery: cleaned,
   };
-}
-
-/**
- * คำนวณคะแนนความตรงกันของผลลัพธ์ (Relevance Scoring)
- */
-function scoreShipmentMatch(
-  customerName: string,
-  trackingNumber: string,
-  rawQuery: string,
-  tokens: string[],
-  firstWord: string
-): number {
-  const qLower = rawQuery.toLowerCase();
-  const trackLower = (trackingNumber || '').toLowerCase().replace(/\s+/g, '');
-  const qCompact = qLower.replace(/\s+/g, '');
-  const nameLower = (customerName || '').toLowerCase();
-
-  // 1. หมายเลขพัสดุตรงกัน
-  if (trackLower === qCompact || trackLower.includes(qCompact)) {
-    return 100;
-  }
-
-  // 2. ชื่อตรงกับคำค้นหาเต็มๆ
-  if (nameLower === qLower || nameLower.includes(qLower)) {
-    return 90;
-  }
-
-  // 3. คำค้นหามีชื่อใน DB อยู่ (เช่น ลูกค้าค้นหาชื่อเต็ม แต่ใน DB บันทึกแค่ชื่อจริง)
-  if (nameLower.length >= 2 && qLower.includes(nameLower)) {
-    return 85;
-  }
-
-  // 4. ชื่อตรงกับคำแรก (ชื่อจริง)
-  if (firstWord && nameLower.includes(firstWord.toLowerCase())) {
-    return 80;
-  }
-
-  // 5. ชื่อตรงกับคำอื่นๆ ในคำค้นหา (นามสกุล หรือชื่อเล่น)
-  for (const token of tokens) {
-    if (nameLower.includes(token.toLowerCase())) {
-      return 70;
-    }
-  }
-
-  // 6. ตรงกันหลังสลับ ฎ <-> ฏ
-  const normName = nameLower.replace(/ฎ/g, 'ฏ');
-  const normQ = qLower.replace(/ฎ/g, 'ฏ');
-  if (normName.includes(normQ) || (normName.length >= 2 && normQ.includes(normName))) {
-    return 65;
-  }
-
-  return 50;
 }
 
 export async function GET(request: NextRequest) {
   const { searchParams } = new URL(request.url);
   const rawQuery = (searchParams.get('q') || '').trim();
 
-  // ป้องกันการยิงค้นหาว่างๆ หรือสั้นเกินไป เพื่อป้องกันการกวาดข้อมูล (Data Scraping)
+  // ป้องกันการค้นหาคำสั้นเกินไป เพื่อความปลอดภัยของข้อมูล
   if (!rawQuery || rawQuery.length < 2) {
     return NextResponse.json([]);
   }
 
-  const { terms, isTrackingNumber, tokens, firstWord } = generateSearchTerms(rawQuery);
+  const { terms, isTrackingNumber, cleanQuery } = generateSearchTerms(rawQuery);
   if (terms.length === 0) {
     return NextResponse.json([]);
   }
@@ -185,34 +132,36 @@ export async function GET(request: NextRequest) {
     supabaseAnonKey !== 'your-anon-key-here'
   );
 
-  // 1. กรณีไม่ได้ตั้งค่า Supabase ให้ค้นหาจาก Mock Data
+  // 1. กรณีจำลอง (Mock Data)
   if (!isConfigured) {
-    const qLower = rawQuery.toLowerCase();
+    const normalizeThai = (str: string) =>
+      str
+        .toLowerCase()
+        .replace(/\u0E4D\u0E32/g, '\u0E33')
+        .replace(/ฎ/g, 'ฏ');
+
+    const qNorm = normalizeThai(cleanQuery);
+    const compactQ = qNorm.replace(/\s+/g, '');
+    const words = qNorm.split(/\s+/).filter((w) => w.length >= 2);
+
     const matched = MOCK_SHIPMENTS.filter((s) => {
-      const name = s.customer_name.toLowerCase();
+      const name = normalizeThai(s.customer_name);
       const track = s.tracking_number.toLowerCase().replace(/\s+/g, '');
 
-      if (name.includes(qLower) || (name.length >= 2 && qLower.includes(name))) return true;
-      if (track.includes(qLower.replace(/\s+/g, ''))) return true;
+      if (track.includes(compactQ) || compactQ.includes(track)) return true;
+      if (name.includes(qNorm)) return true;
 
-      return terms.some((t) => {
-        const tLower = t.toLowerCase();
-        return name.includes(tLower) || track.includes(tLower.replace(/\s+/g, ''));
-      });
-    })
-      .map((s) => ({
-        id: s.id,
-        customer_name: maskCustomerName(s.customer_name),
-        shipping_date: s.shipping_date,
-        carrier: s.carrier,
-        tracking_number: s.tracking_number,
-        _score: scoreShipmentMatch(s.customer_name, s.tracking_number, rawQuery, tokens, firstWord),
-      }))
-      .sort((a, b) => {
-        if (b._score !== a._score) return b._score - a._score;
-        return (b.shipping_date || '').localeCompare(a.shipping_date || '');
-      })
-      .map(({ _score, ...rest }) => rest);
+      if (words.length > 0) {
+        return words.every((w) => name.includes(w));
+      }
+      return false;
+    }).map((s) => ({
+      id: s.id,
+      customer_name: maskCustomerName(s.customer_name),
+      shipping_date: s.shipping_date,
+      carrier: s.carrier,
+      tracking_number: s.tracking_number,
+    }));
 
     return NextResponse.json(matched);
   }
@@ -224,7 +173,7 @@ export async function GET(request: NextRequest) {
     });
 
     // 2. ค้นหาผ่าน PostgreSQL RPC Function (SECURITY DEFINER)
-    // ยิงค้นหาควบคู่กับ Term ต่างๆ เพื่อให้ค้นเจอทั้งชื่อจริง นามสกุล และชื่อเต็ม
+    // ค้นหาด้วยตัวแปรของประโยคเต็มทั้งหมด (สระอำ ผสม/แยก, ฎ/ฏ, ตัดคำนำหน้า)
     const rpcPromises = terms.map(async (term) => {
       try {
         const { data, error } = await supabase.rpc('search_public_shipments', {
@@ -242,33 +191,23 @@ export async function GET(request: NextRequest) {
     if (hasAnyRpcSuccess) {
       const itemMap = new Map<string, any>();
 
-      rpcResults.forEach(({ term, data }) => {
+      rpcResults.forEach(({ data }) => {
         data.forEach((row: any) => {
-          const track = row.tracking_number || '';
-          const name = row.customer_name || row.masked_customer_name || '';
-          const score = scoreShipmentMatch(name, track, rawQuery, tokens, firstWord);
-
-          const existing = itemMap.get(row.id);
-          if (!existing || score > existing._score) {
+          if (!itemMap.has(row.id)) {
             itemMap.set(row.id, {
               id: row.id,
-              customer_name: maskCustomerName(name),
+              customer_name: maskCustomerName(row.customer_name || row.masked_customer_name),
               shipping_date: row.shipping_date,
               carrier: row.carrier,
               tracking_number: row.tracking_number,
-              _score: score,
             });
           }
         });
       });
 
       const sortedResults = Array.from(itemMap.values())
-        .sort((a, b) => {
-          if (b._score !== a._score) return b._score - a._score;
-          return (b.shipping_date || '').localeCompare(a.shipping_date || '');
-        })
-        .slice(0, 30)
-        .map(({ _score, ...rest }) => rest);
+        .sort((a, b) => (b.shipping_date || '').localeCompare(a.shipping_date || ''))
+        .slice(0, 30);
 
       return NextResponse.json(sortedResults);
     }
@@ -283,48 +222,20 @@ export async function GET(request: NextRequest) {
       .select('id, customer_name, shipping_date, carrier, tracking_number')
       .or(orClauses)
       .order('shipping_date', { ascending: false })
-      .limit(50);
+      .limit(30);
 
     if (tableError) {
       console.warn('Server Supabase search fallback to mock:', tableError.message);
-      const qLower = rawQuery.toLowerCase();
-      const matched = MOCK_SHIPMENTS.filter((s) => {
-        const name = s.customer_name.toLowerCase();
-        const track = s.tracking_number.toLowerCase().replace(/\s+/g, '');
-        if (name.includes(qLower) || (name.length >= 2 && qLower.includes(name))) return true;
-        if (track.includes(qLower.replace(/\s+/g, ''))) return true;
-        return terms.some((t) => name.includes(t.toLowerCase()) || track.includes(t.toLowerCase()));
-      }).map((s) => ({
-        id: s.id,
-        customer_name: maskCustomerName(s.customer_name),
-        shipping_date: s.shipping_date,
-        carrier: s.carrier,
-        tracking_number: s.tracking_number,
-      }));
-      return NextResponse.json(matched);
+      return NextResponse.json([]);
     }
 
-    const sanitized = (tableData || [])
-      .map((row) => ({
-        id: row.id,
-        customer_name: maskCustomerName(row.customer_name),
-        shipping_date: row.shipping_date,
-        carrier: row.carrier,
-        tracking_number: row.tracking_number,
-        _score: scoreShipmentMatch(
-          row.customer_name,
-          row.tracking_number,
-          rawQuery,
-          tokens,
-          firstWord
-        ),
-      }))
-      .sort((a, b) => {
-        if (b._score !== a._score) return b._score - a._score;
-        return (b.shipping_date || '').localeCompare(a.shipping_date || '');
-      })
-      .slice(0, 30)
-      .map(({ _score, ...rest }) => rest);
+    const sanitized = (tableData || []).map((row) => ({
+      id: row.id,
+      customer_name: maskCustomerName(row.customer_name),
+      shipping_date: row.shipping_date,
+      carrier: row.carrier,
+      tracking_number: row.tracking_number,
+    }));
 
     return NextResponse.json(sanitized);
   } catch (error: any) {

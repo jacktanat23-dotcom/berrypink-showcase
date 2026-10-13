@@ -532,7 +532,7 @@ export default function AdminTrackingPage() {
       .map((s) => s.customer_name);
   }, [shipments, roundToDelete]);
 
-  // กรองรายการตามคำค้นหาและวันที่ (รองรับทั้งชื่อจริง, นามสกุล, ชื่อเต็ม, สลับ ฎ/ฏ)
+  // กรองรายการตามคำค้นหาและวันที่ (รองรับทั้งชื่อจริง, นามสกุล, ชื่อเต็ม, สลับ ฎ/ฏ, สระอำ)
   const filteredShipments = useMemo(() => {
     const rawQ = searchQuery.trim().toLowerCase();
     return shipments.filter((s) => {
@@ -540,30 +540,36 @@ export default function AdminTrackingPage() {
       if (!matchesDate) return false;
       if (!rawQ) return true;
 
-      const name = s.customer_name.toLowerCase();
-      const tracking = s.tracking_number.toLowerCase().replace(/\s+/g, '');
-      const note = (s.note || '').toLowerCase();
-      const compactQ = rawQ.replace(/\s+/g, '');
+      // ปรับมาตรฐานภาษาไทย (สระอำ ผสม/แยก และ ฎ/ฏ)
+      const normalizeThai = (str: string) =>
+        str
+          .toLowerCase()
+          .replace(/\u0E4D\u0E32/g, '\u0E33')
+          .replace(/ฎ/g, 'ฏ');
 
-      // 1. ตรวจสอบตรงๆ ทั้งสองทิศทาง (ชื่อมีคำค้น หรือ คำค้นมีชื่อในตาราง)
+      const name = normalizeThai(s.customer_name);
+      const qNorm = normalizeThai(rawQ);
+      const tracking = s.tracking_number.toLowerCase().replace(/\s+/g, '');
+      const note = normalizeThai(s.note || '');
+      const compactQ = qNorm.replace(/\s+/g, '');
+
+      // 1. ตรวจสอบตรงๆ (ชื่อมีคำค้น หรือเลขพัสดุมีคำค้น หรือหมายเหตุมีคำค้น)
       if (
-        name.includes(rawQ) ||
-        (name.length >= 2 && rawQ.includes(name)) ||
+        name.includes(qNorm) ||
         tracking.includes(compactQ) ||
-        note.includes(rawQ)
+        note.includes(qNorm)
       ) {
         return true;
       }
 
-      // 2. ตรวจสอบแบบแยกคำ (Tokens) เช่น ลูกค้าพิมพ์ชื่อ-นามสกุล แต่ในตารางมีแค่ชื่อจริง หรือสลับ ฎ <-> ฏ
-      const words = rawQ.split(/\s+/).filter((w) => w.length >= 2);
-      const nameNorm = name.replace(/ฎ/g, 'ฏ');
-      const tokenMatch = words.some((w) => {
-        const wNorm = w.replace(/ฎ/g, 'ฏ');
-        return nameNorm.includes(wNorm) || tracking.includes(w) || note.includes(w);
-      });
+      // 2. กรณีค้นหาหลายคำ (เช่น ชื่อ และ นามสกุล) ต้องตรง "ทุกคำ" (words.every)
+      const words = qNorm.split(/\s+/).filter((w) => w.length >= 2);
+      if (words.length > 0) {
+        const allWordsMatch = words.every((w) => name.includes(w) || note.includes(w));
+        if (allWordsMatch) return true;
+      }
 
-      return tokenMatch;
+      return false;
     });
   }, [shipments, searchQuery, selectedDate]);
 

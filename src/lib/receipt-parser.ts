@@ -101,6 +101,10 @@ export function cleanCustomerName(raw: string): string {
   text = text.replace(/ϧ/g, '่');
   text = text.replace(/Ϩ/g, '้');
 
+  // Normalize decomposed Thai Sara Am (นิคหิต + สระอา -> สระอำ)
+  text = text.replace(/\u0E4D\u0E32/g, '\u0E33');
+  text = text.normalize('NFC');
+
   // Clean extra spaces
   text = text.replace(/\s+/g, ' ').trim();
 
