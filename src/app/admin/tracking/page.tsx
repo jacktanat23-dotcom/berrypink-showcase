@@ -55,6 +55,11 @@ export default function AdminTrackingPage() {
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [copiedId, setCopiedId] = useState<string | null>(null);
 
+  // Delete Round Modal State
+  const [isDeleteRoundModalOpen, setIsDeleteRoundModalOpen] = useState(false);
+  const [roundToDelete, setRoundToDelete] = useState<string>('');
+  const [isDeletingRound, setIsDeletingRound] = useState(false);
+
   // Single Form State
   const [formData, setFormData] = useState<ShipmentFormData>({
     customer_name: '',
@@ -196,6 +201,63 @@ export default function AdminTrackingPage() {
       await fetchShipments();
     } catch (err: any) {
       alert(`ลบไม่สำเร็จ: ${err.message}`);
+    }
+  };
+
+  // เปิด Modal ลบรอบส่ง
+  const handleOpenDeleteRoundModal = (date?: string) => {
+    if (date && date !== 'all') {
+      setRoundToDelete(date);
+    } else if (selectedDate !== 'all') {
+      setRoundToDelete(selectedDate);
+    } else if (uniqueDates.length > 0) {
+      setRoundToDelete(uniqueDates[0]);
+    } else {
+      setRoundToDelete('');
+    }
+    setIsDeleteRoundModalOpen(true);
+  };
+
+  // ยืนยันลบข้อมูลทั้งรอบส่ง
+  const handleConfirmDeleteRound = async () => {
+    if (!roundToDelete) {
+      alert('กรุณาเลือกรอบวันที่จัดส่งที่ต้องการลบ');
+      return;
+    }
+
+    const count = dateCounts[roundToDelete] || 0;
+    setIsDeletingRound(true);
+
+    try {
+      if (!isSupabaseConfigured()) {
+        setShipments((prev) => prev.filter((s) => s.shipping_date !== roundToDelete));
+        alert(`ลบข้อมูลรอบส่งวันที่ ${formatThaiDate(roundToDelete)} สำเร็จเรียบร้อยแล้ว (${count} รายการ) 🗑️`);
+        setIsDeleteRoundModalOpen(false);
+        if (selectedDate === roundToDelete) {
+          setSelectedDate('all');
+        }
+        return;
+      }
+
+      const supabase = createClient();
+      const { error } = await supabase
+        .from('shipments')
+        .delete()
+        .eq('shipping_date', roundToDelete);
+
+      if (error) throw error;
+
+      alert(`ลบข้อมูลรอบส่งวันที่ ${formatThaiDate(roundToDelete)} สำเร็จเรียบร้อยแล้วทั้งหมด ${count} รายการ! 🗑️`);
+      setIsDeleteRoundModalOpen(false);
+      if (selectedDate === roundToDelete) {
+        setSelectedDate('all');
+      }
+      await fetchShipments();
+    } catch (err: any) {
+      console.error('Delete round error:', err);
+      alert(`ลบรอบส่งไม่สำเร็จ: ${err.message || 'เกิดข้อผิดพลาดในการลบข้อมูล'}`);
+    } finally {
+      setIsDeletingRound(false);
     }
   };
 
@@ -453,6 +515,23 @@ export default function AdminTrackingPage() {
     return dates.sort((a, b) => b.localeCompare(a));
   }, [shipments]);
 
+  // นับจำนวนพัสดุในแต่ละรอบส่ง
+  const dateCounts = useMemo(() => {
+    const counts: Record<string, number> = {};
+    for (const s of shipments) {
+      counts[s.shipping_date] = (counts[s.shipping_date] || 0) + 1;
+    }
+    return counts;
+  }, [shipments]);
+
+  // รายชื่อลูกค้าตัวอย่างในรอบส่งที่จะลบ
+  const sampleCustomersForDeleteRound = useMemo(() => {
+    if (!roundToDelete) return [];
+    return shipments
+      .filter((s) => s.shipping_date === roundToDelete)
+      .map((s) => s.customer_name);
+  }, [shipments, roundToDelete]);
+
   // กรองรายการตามคำค้นหาและวันที่ (รองรับทั้งชื่อจริง, นามสกุล, ชื่อเต็ม, สลับ ฎ/ฏ)
   const filteredShipments = useMemo(() => {
     const rawQ = searchQuery.trim().toLowerCase();
@@ -519,7 +598,18 @@ export default function AdminTrackingPage() {
             </div>
 
             {/* Quick Action Buttons */}
-            <div className="flex items-center gap-2.5">
+            <div className="flex flex-wrap items-center gap-2.5">
+              <button
+                type="button"
+                onClick={() => handleOpenDeleteRoundModal()}
+                disabled={uniqueDates.length === 0}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3.5 py-2.5 text-xs sm:text-sm font-semibold text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs disabled:opacity-50 disabled:cursor-not-allowed"
+                title="ลบข้อมูลพัสดุทั้งรอบส่ง"
+              >
+                <Trash2 className="h-4 w-4 text-rose-600" />
+                <span>ลบรอบส่ง</span>
+              </button>
+
               <button
                 type="button"
                 onClick={() => setIsBulkModalOpen(true)}
@@ -597,7 +687,7 @@ export default function AdminTrackingPage() {
             />
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Calendar className="h-4 w-4 text-slate-400 shrink-0" />
             <select
               value={selectedDate}
@@ -607,10 +697,22 @@ export default function AdminTrackingPage() {
               <option value="all">ทุกรอบจัดส่ง ({shipments.length})</option>
               {uniqueDates.map((date) => (
                 <option key={date} value={date}>
-                  รอบส่ง: {formatThaiDate(date)}
+                  รอบส่ง: {formatThaiDate(date)} ({dateCounts[date] || 0} รายการ)
                 </option>
               ))}
             </select>
+
+            {selectedDate !== 'all' && (
+              <button
+                type="button"
+                onClick={() => handleOpenDeleteRoundModal(selectedDate)}
+                className="inline-flex items-center gap-1.5 rounded-xl border border-rose-200 bg-rose-50 px-3 py-2 text-xs sm:text-sm font-semibold text-rose-700 hover:bg-rose-100 transition-colors shadow-2xs"
+                title={`ลบข้อมูลรอบส่ง ${formatThaiDate(selectedDate)} ทั้งหมด`}
+              >
+                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                <span>ลบรอบนี้</span>
+              </button>
+            )}
 
             <button
               onClick={fetchShipments}
@@ -621,6 +723,34 @@ export default function AdminTrackingPage() {
             </button>
           </div>
         </div>
+
+        {/* Selected Round Info Banner */}
+        {selectedDate !== 'all' && (
+          <div className="mb-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3 rounded-2xl border border-purple-200/80 bg-gradient-to-r from-purple-50/80 via-pink-50/40 to-white px-5 py-3.5 shadow-2xs">
+            <div className="flex items-center gap-3">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-purple-100 text-purple-600 shrink-0">
+                <Calendar className="h-4 w-4" />
+              </div>
+              <div>
+                <span className="text-sm font-bold text-slate-900">
+                  รอบจัดส่งวันที่: {formatThaiDate(selectedDate)}
+                </span>
+                <div className="text-xs text-purple-700 font-medium flex items-center gap-2 mt-0.5">
+                  <span>มีพัสดุในรอบนี้ทั้งหมด {dateCounts[selectedDate] || 0} รายการ</span>
+                </div>
+              </div>
+            </div>
+
+            <button
+              type="button"
+              onClick={() => handleOpenDeleteRoundModal(selectedDate)}
+              className="inline-flex items-center justify-center gap-1.5 rounded-xl border border-rose-200 bg-white hover:bg-rose-50 px-3.5 py-1.5 text-xs font-semibold text-rose-600 hover:text-rose-700 shadow-2xs transition-all active:scale-95"
+            >
+              <Trash2 className="h-3.5 w-3.5 text-rose-500" />
+              <span>ลบข้อมูลทั้งรอบส่งนี้ ({dateCounts[selectedDate] || 0} คน)</span>
+            </button>
+          </div>
+        )}
 
         {/* Shipments Table */}
         <div className="overflow-hidden rounded-2xl border border-slate-200 bg-white shadow-xs">
@@ -1172,6 +1302,131 @@ export default function AdminTrackingPage() {
                 {isSubmitting
                   ? 'กำลังนำเข้า...'
                   : `บันทึกทั้งหมด (${bulkParsed.length} คน)`}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete Shipping Round Modal */}
+      {isDeleteRoundModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-slate-900/50 backdrop-blur-xs p-4 overflow-y-auto">
+          <div className="w-full max-w-lg rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-rose-100 animate-in fade-in zoom-in-95 duration-150">
+            {/* Modal Header */}
+            <div className="flex items-start justify-between pb-4 border-b border-slate-100">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 items-center justify-center rounded-2xl bg-rose-100 text-rose-600 shrink-0">
+                  <Trash2 className="h-6 w-6 text-rose-600" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-slate-900">
+                    ลบข้อมูลตามรอบจัดส่ง
+                  </h3>
+                  <p className="text-xs text-slate-500">
+                    ลบรายการพัสดุและรายชื่อลูกค้าทั้งหมดในรอบวันที่ที่เลือก
+                  </p>
+                </div>
+              </div>
+              <button
+                type="button"
+                onClick={() => setIsDeleteRoundModalOpen(false)}
+                className="rounded-xl p-1.5 text-slate-400 hover:bg-slate-100 hover:text-slate-700 transition-colors"
+              >
+                <X className="h-5 w-5" />
+              </button>
+            </div>
+
+            {/* Modal Body */}
+            <div className="py-5 space-y-4">
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  เลือกรอบวันที่จัดส่งที่ต้องการลบ:
+                </label>
+                <select
+                  value={roundToDelete}
+                  onChange={(e) => setRoundToDelete(e.target.value)}
+                  className="w-full rounded-xl border border-slate-200 px-3.5 py-2.5 text-sm text-slate-900 outline-none focus:border-rose-500 focus:ring-2 focus:ring-rose-100 bg-white"
+                >
+                  {uniqueDates.map((date) => (
+                    <option key={date} value={date}>
+                      รอบส่ง: {formatThaiDate(date)} ({dateCounts[date] || 0} รายการ)
+                    </option>
+                  ))}
+                </select>
+              </div>
+
+              {/* Round Details Summary Box */}
+              {roundToDelete && (
+                <div className="rounded-2xl border border-rose-100 bg-rose-50/60 p-4 space-y-2.5 text-xs text-slate-700">
+                  <div className="flex items-center justify-between font-medium">
+                    <span>รอบวันที่จัดส่ง:</span>
+                    <span className="font-bold text-slate-900">
+                      {formatThaiDate(roundToDelete)}
+                    </span>
+                  </div>
+                  <div className="flex items-center justify-between font-medium">
+                    <span>จำนวนพัสดุที่จะถูกลบ:</span>
+                    <span className="font-bold text-rose-700 text-sm">
+                      {dateCounts[roundToDelete] || 0} รายการ
+                    </span>
+                  </div>
+
+                  {sampleCustomersForDeleteRound.length > 0 && (
+                    <div className="pt-2 border-t border-rose-200/60">
+                      <span className="text-slate-500 block mb-1">
+                        ตัวอย่างรายชื่อลูกค้าในรอบนี้:
+                      </span>
+                      <p className="text-slate-800 font-medium leading-relaxed">
+                        {sampleCustomersForDeleteRound.slice(0, 6).join(', ')}
+                        {sampleCustomersForDeleteRound.length > 6 && (
+                          <span className="text-slate-500">
+                            {' '}และอีก {sampleCustomersForDeleteRound.length - 6} คน
+                          </span>
+                        )}
+                      </p>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {/* Warning Notice */}
+              <div className="rounded-2xl border border-amber-200 bg-amber-50 p-3.5 text-xs text-amber-800 flex items-start gap-2.5">
+                <AlertTriangle className="h-5 w-5 text-amber-600 shrink-0 mt-0.5" />
+                <div className="leading-relaxed">
+                  <span className="font-bold text-amber-900">คำเตือน:</span> รายการพัสดุทั้งหมดในรอบส่งนี้จะถูกลบออกจากระบบอย่างถาวร และลูกค้าจะไม่สามารถค้นหาเลขพัสดุในรอบส่งนี้ได้อีก โปรดตรวจสอบให้แน่ใจก่อนกดยืนยัน
+                </div>
+              </div>
+            </div>
+
+            {/* Modal Footer */}
+            <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
+              <button
+                type="button"
+                onClick={() => setIsDeleteRoundModalOpen(false)}
+                disabled={isDeletingRound}
+                className="rounded-xl border border-slate-200 px-4 py-2.5 text-xs font-semibold text-slate-600 hover:bg-slate-50 transition-colors"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={handleConfirmDeleteRound}
+                disabled={isDeletingRound || !roundToDelete || (dateCounts[roundToDelete] || 0) === 0}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 hover:bg-rose-700 px-5 py-2.5 text-xs font-semibold text-white shadow-sm transition-all active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                {isDeletingRound ? (
+                  <>
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>กำลังลบข้อมูล...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    <span>
+                      ยืนยันลบทั้งรอบส่ง ({dateCounts[roundToDelete] || 0} รายการ)
+                    </span>
+                  </>
+                )}
               </button>
             </div>
           </div>
