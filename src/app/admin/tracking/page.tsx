@@ -532,13 +532,16 @@ export default function AdminTrackingPage() {
       .map((s) => s.customer_name);
   }, [shipments, roundToDelete]);
 
-  // กรองรายการตามคำค้นหาและวันที่ (รองรับทั้งชื่อจริง, นามสกุล, ชื่อเต็ม, สลับ ฎ/ฏ, สระอำ)
+  // กรองรายการตามคำค้นหาและวันที่ (รองรับทั้งชื่อจริง, นามสกุล, ชื่อเต็ม, สลับ ฎ/ฏ, สระอำ, คำนำหน้า น.ส./นางสาว)
   const filteredShipments = useMemo(() => {
     const rawQ = searchQuery.trim().toLowerCase();
     return shipments.filter((s) => {
       const matchesDate = selectedDate === 'all' || s.shipping_date === selectedDate;
       if (!matchesDate) return false;
       if (!rawQ) return true;
+
+      const TITLE_REGEX =
+        /^(นางสาว|เด็กหญิง|เด็กชาย|น\.ส\.|น\.ส|นส\.|ด\.ช\.|ด\.ช|ดช\.|ด\.ญ\.|ด\.ญ|ดญ\.|นาย|นาง|คุณ|น้อง|พี่)\s*/i;
 
       // ปรับมาตรฐานภาษาไทย (สระอำ ผสม/แยก และ ฎ/ฏ)
       const normalizeThai = (str: string) =>
@@ -549,6 +552,7 @@ export default function AdminTrackingPage() {
 
       const name = normalizeThai(s.customer_name);
       const qNorm = normalizeThai(rawQ);
+      const qWithoutTitle = qNorm.replace(TITLE_REGEX, '').trim();
       const tracking = s.tracking_number.toLowerCase().replace(/\s+/g, '');
       const note = normalizeThai(s.note || '');
       const compactQ = qNorm.replace(/\s+/g, '');
@@ -556,6 +560,7 @@ export default function AdminTrackingPage() {
       // 1. ตรวจสอบตรงๆ (ชื่อมีคำค้น หรือเลขพัสดุมีคำค้น หรือหมายเหตุมีคำค้น)
       if (
         name.includes(qNorm) ||
+        (qWithoutTitle.length >= 2 && name.includes(qWithoutTitle)) ||
         tracking.includes(compactQ) ||
         note.includes(qNorm)
       ) {
@@ -563,7 +568,7 @@ export default function AdminTrackingPage() {
       }
 
       // 2. กรณีค้นหาหลายคำ (เช่น ชื่อ และ นามสกุล) ต้องตรง "ทุกคำ" (words.every)
-      const words = qNorm.split(/\s+/).filter((w) => w.length >= 2);
+      const words = qWithoutTitle.split(/\s+/).filter((w) => w.length >= 2);
       if (words.length > 0) {
         const allWordsMatch = words.every((w) => name.includes(w) || note.includes(w));
         if (allWordsMatch) return true;

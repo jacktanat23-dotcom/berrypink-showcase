@@ -5,19 +5,8 @@ import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
 
-const TITLE_PREFIXES = [
-  'นางสาว',
-  'เด็กหญิง',
-  'เด็กชาย',
-  'คุณ',
-  'น้อง',
-  'พี่',
-  'นาง',
-  'นาย',
-  'ด.ญ.',
-  'ด.ช.',
-  'น.ส.',
-];
+const TITLE_REGEX =
+  /^(นางสาว|เด็กหญิง|เด็กชาย|น\.ส\.|น\.ส|นส\.|ด\.ช\.|ด\.ช|ดช\.|ด\.ญ\.|ด\.ญ|ดญ\.|นาย|นาง|คุณ|น้อง|พี่)\s*/i;
 
 /**
  * สร้างตัวแปรอักขระไทย (Thai Character Variants)
@@ -46,10 +35,11 @@ function getThaiVariants(text: string): string[] {
 /**
  * สร้างคำค้นหาสำหรับยิงค้นหาพัสดุ
  * - กรณีค้นหาด้วยหมายเลขพัสดุ: ค้นหาด้วยรหัสพัสดุตรงๆ
- * - กรณีค้นหาด้วยชื่อเต็ม (เช่น "ณัฏฐณิชา กำเนิดมณี"): จะค้นหาด้วย "ประโยคเต็ม" และตัวแปรอักขระของทั้งประโยค
- *   (ไม่แยกคำเดี่ยวทำ OR เพื่อป้องกันกรณีลูกค้านามสกุล "กำเนิดมณี" แต่พิมพ์ "กำเนิดพลอย" แล้วหลุดไปเจอ)
- * - กรณีค้นหาด้วยชื่อจริงคำเดียว (เช่น "ณัฏฐณิชา") หรือ นามสกุลคำเดียว (เช่น "กำเนิดมณี"):
- *   จะค้นหาเฉพาะคำนั้นๆ และตัวแปรอักขระของคำนั้น
+ * - กรณีค้นหาด้วยชื่อ-นามสกุล หรือมีคำนำหน้า (เช่น "น.ส.นันธภัค สุขสำราญ"):
+ *   1. ค้นหาด้วยข้อความเดิมที่มีคำนำหน้า (พร้อมตัวแปรสระอำ/ตัวสะกด)
+ *   2. ค้นหาด้วยชื่อตัดคำนำหน้าออก (เช่น "นันธภัค สุขสำราญ") เพื่อรองรับกรณีที่ในระบบไม่มีคำนำหน้า หรือบันทึกคนละแบบ
+ *   3. รองรับรูปแบบจุดที่มี/ไม่มีเว้นวรรค เช่น "น.ส. " กับ "น.ส."
+ *   4. ไม่แยกคำนามสกุลทำ OR เดี่ยว เพื่อป้องกันการค้นหานามสกุลผิดแล้วหลุดไปเจอ
  */
 function generateSearchTerms(rawQuery: string): {
   terms: string[];
@@ -75,34 +65,34 @@ function generateSearchTerms(rawQuery: string): {
     };
   }
 
-  // 2. ทำความสะอาดข้อความค้นหาชื่อลูกค้า
-  const cleaned = q
-    .replace(/[()\-–—_.,/\\#[\]{}*~^]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-
+  // 2. ทำความสะอาดช่องว่างและสร้างตัวแปร
   const terms = new Set<string>();
+  const normSpaces = q.replace(/\s+/g, ' ');
 
-  const addPhraseVariants = (phrase: string) => {
-    getThaiVariants(phrase).forEach((v) => terms.add(v));
+  // 2.1 เพิ่มตัวแปรของข้อความที่ลูกค้าพิมพ์
+  getThaiVariants(normSpaces).forEach((v) => terms.add(v));
 
-    // ตัดคำนำหน้าชื่อ (ถ้ามี) เช่น คุณ, น้อง, พี่, นางสาว
-    for (const prefix of TITLE_PREFIXES) {
-      if (phrase.startsWith(prefix) && phrase.length - prefix.length >= 2) {
-        const stripped = phrase.slice(prefix.length).trim();
-        if (stripped.length >= 2) {
-          getThaiVariants(stripped).forEach((v) => terms.add(v));
-        }
-      }
+  // 2.2 ตัดคำนำหน้าชื่อออก (เช่น "น.ส.นันธภัค สุขสำราญ" -> "นันธภัค สุขสำราญ")
+  if (TITLE_REGEX.test(normSpaces)) {
+    const stripped = normSpaces.replace(TITLE_REGEX, '').trim();
+    if (stripped.length >= 2) {
+      getThaiVariants(stripped).forEach((v) => terms.add(v));
     }
-  };
+  }
 
-  addPhraseVariants(cleaned);
+  // 2.3 กรณีมีจุดย่อคำนำหน้า เช่น "น.ส." ให้รองรับทั้งแบบติดกันและแบบมีเว้นวรรค
+  if (normSpaces.includes('.')) {
+    const compactDot = normSpaces.replace(/\.\s+/g, '.');
+    getThaiVariants(compactDot).forEach((v) => terms.add(v));
+
+    const spacedDot = normSpaces.replace(/\.([^\s])/g, (_, c) => '. ' + c);
+    getThaiVariants(spacedDot).forEach((v) => terms.add(v));
+  }
 
   return {
     terms: Array.from(terms),
     isTrackingNumber: false,
-    cleanQuery: cleaned,
+    cleanQuery: normSpaces,
   };
 }
 
@@ -142,14 +132,15 @@ export async function GET(request: NextRequest) {
 
     const qNorm = normalizeThai(cleanQuery);
     const compactQ = qNorm.replace(/\s+/g, '');
-    const words = qNorm.split(/\s+/).filter((w) => w.length >= 2);
+    const qWithoutTitle = qNorm.replace(TITLE_REGEX, '').trim();
+    const words = qWithoutTitle.split(/\s+/).filter((w) => w.length >= 2);
 
     const matched = MOCK_SHIPMENTS.filter((s) => {
       const name = normalizeThai(s.customer_name);
       const track = s.tracking_number.toLowerCase().replace(/\s+/g, '');
 
       if (track.includes(compactQ) || compactQ.includes(track)) return true;
-      if (name.includes(qNorm)) return true;
+      if (name.includes(qNorm) || (qWithoutTitle.length >= 2 && name.includes(qWithoutTitle))) return true;
 
       if (words.length > 0) {
         return words.every((w) => name.includes(w));
@@ -173,7 +164,7 @@ export async function GET(request: NextRequest) {
     });
 
     // 2. ค้นหาผ่าน PostgreSQL RPC Function (SECURITY DEFINER)
-    // ค้นหาด้วยตัวแปรของประโยคเต็มทั้งหมด (สระอำ ผสม/แยก, ฎ/ฏ, ตัดคำนำหน้า)
+    // ค้นหาด้วยตัวแปรของประโยคเต็มทั้งหมด (สระอำ ผสม/แยก, ฎ/ฏ, ตัดคำนำหน้า น.ส./นางสาว/คุณ)
     const rpcPromises = terms.map(async (term) => {
       try {
         const { data, error } = await supabase.rpc('search_public_shipments', {
