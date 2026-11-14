@@ -4,6 +4,15 @@ import { MOCK_SHIPMENTS } from '@/lib/mock-data';
 import { createClient as createSupabaseClient } from '@supabase/supabase-js';
 
 export const dynamic = 'force-dynamic';
+export const revalidate = 0;
+export const fetchCache = 'force-no-store';
+
+const NO_CACHE_HEADERS = {
+  'Cache-Control': 'no-store, no-cache, must-revalidate, proxy-revalidate, max-age=0',
+  'Pragma': 'no-cache',
+  'Expires': '0',
+  'Surrogate-Control': 'no-store',
+};
 
 const TITLE_REGEX =
   /^(นางสาว|เด็กหญิง|เด็กชาย|น\.ส\.|น\.ส|นส\.|ด\.ช\.|ด\.ช|ดช\.|ด\.ญ\.|ด\.ญ|ดญ\.|นาย|นาง|คุณ|น้อง|พี่)\s*/i;
@@ -67,7 +76,7 @@ function generateSearchTerms(rawQuery: string): {
 
   // 2. ทำความสะอาดช่องว่างและสร้างตัวแปร
   const terms = new Set<string>();
-  const normSpaces = q.replace(/\s+/g, ' ');
+  const normSpaces = q.normalize('NFC').replace(/\s+/g, ' ');
 
   // 2.1 เพิ่มตัวแปรของข้อความที่ลูกค้าพิมพ์
   getThaiVariants(normSpaces).forEach((v) => terms.add(v));
@@ -102,12 +111,12 @@ export async function GET(request: NextRequest) {
 
   // ป้องกันการค้นหาคำสั้นเกินไป เพื่อความปลอดภัยของข้อมูล
   if (!rawQuery || rawQuery.length < 2) {
-    return NextResponse.json([]);
+    return NextResponse.json([], { headers: NO_CACHE_HEADERS });
   }
 
   const { terms, isTrackingNumber, cleanQuery } = generateSearchTerms(rawQuery);
   if (terms.length === 0) {
-    return NextResponse.json([]);
+    return NextResponse.json([], { headers: NO_CACHE_HEADERS });
   }
 
   const rawUrl = process.env.NEXT_PUBLIC_SUPABASE_URL || '';
@@ -154,13 +163,20 @@ export async function GET(request: NextRequest) {
       tracking_number: s.tracking_number,
     }));
 
-    return NextResponse.json(matched);
+    return NextResponse.json(matched, { headers: NO_CACHE_HEADERS });
   }
 
   try {
     const keyToUse = supabaseServiceKey || supabaseAnonKey;
     const supabase = createSupabaseClient(supabaseUrl, keyToUse, {
       auth: { persistSession: false },
+      global: {
+        fetch: (url, options = {}) =>
+          fetch(url, {
+            ...options,
+            cache: 'no-store',
+          }),
+      },
     });
 
     // 2. ค้นหาผ่าน PostgreSQL RPC Function (SECURITY DEFINER)
@@ -200,7 +216,7 @@ export async function GET(request: NextRequest) {
         .sort((a, b) => (b.shipping_date || '').localeCompare(a.shipping_date || ''))
         .slice(0, 30);
 
-      return NextResponse.json(sortedResults);
+      return NextResponse.json(sortedResults, { headers: NO_CACHE_HEADERS });
     }
 
     // 3. Fallback: ค้นหาจากตาราง shipments โดยตรง
@@ -217,7 +233,7 @@ export async function GET(request: NextRequest) {
 
     if (tableError) {
       console.warn('Server Supabase search fallback to mock:', tableError.message);
-      return NextResponse.json([]);
+      return NextResponse.json([], { headers: NO_CACHE_HEADERS });
     }
 
     const sanitized = (tableData || []).map((row) => ({
@@ -228,12 +244,12 @@ export async function GET(request: NextRequest) {
       tracking_number: row.tracking_number,
     }));
 
-    return NextResponse.json(sanitized);
+    return NextResponse.json(sanitized, { headers: NO_CACHE_HEADERS });
   } catch (error: any) {
     console.error('API Tracking Search exception:', error);
     return NextResponse.json(
       { error: 'Internal Server Error' },
-      { status: 500 }
+      { status: 500, headers: NO_CACHE_HEADERS }
     );
   }
 }

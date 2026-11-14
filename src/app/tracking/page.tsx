@@ -52,7 +52,16 @@ export default function TrackingPage() {
 
     try {
       // เรียกผ่าน Server API ที่ Mask ชื่อลูกค้าและตัดข้อมูลสินค้า (note) ออกก่อนส่งถึง Browser
-      const res = await fetch(`/api/tracking/search?q=${encodeURIComponent(cleanQuery)}`);
+      const res = await fetch(
+        `/api/tracking/search?q=${encodeURIComponent(cleanQuery)}&_t=${Date.now()}`,
+        {
+          cache: 'no-store',
+          headers: {
+            'Cache-Control': 'no-cache',
+            'Pragma': 'no-cache',
+          },
+        }
+      );
       if (!res.ok) throw new Error('Search failed');
       const data = await res.json();
       setResults(data || []);
