@@ -20,6 +20,7 @@ import {
   Check,
   X,
   Lock,
+  Trash2,
 } from 'lucide-react';
 import { UserProfile, UserRole } from '@/lib/types';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
@@ -39,6 +40,10 @@ export default function AdminUsersPage() {
     profile: UserProfile;
     nextRole: UserRole;
   } | null>(null);
+
+  // Modal ยืนยันการลบสมาชิก
+  const [deleteModal, setDeleteModal] = useState<UserProfile | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
 
   const fetchProfiles = async () => {
     setLoading(true);
@@ -121,6 +126,94 @@ export default function AdminUsersPage() {
         message: `ไม่สามารถเปลี่ยนสิทธิ์ได้: ${err.message}`,
       });
     } finally {
+      setActionLoadingId(null);
+    }
+  };
+
+  // ฟังก์ชันลบสมาชิกออกจากระบบ
+  const handleDeleteUser = async (targetProfile: UserProfile) => {
+    if (targetProfile.id === currentAdminId) {
+      setFeedback({
+        type: 'error',
+        message: 'ไม่อนุญาตให้ลบบัญชีของตัวเอง เพื่อป้องกันการถูกล็อคออกจากระบบหลังบ้าน',
+      });
+      setDeleteModal(null);
+      return;
+    }
+
+    setIsDeleting(true);
+    setActionLoadingId(targetProfile.id);
+
+    try {
+      const supabase = createClient();
+      const {
+        data: { session },
+      } = await supabase.auth.getSession();
+
+      let isSuccess = false;
+      let lastErrorMessage = '';
+
+      // 1. เรียก API Server Route สำหรับลบผู้ใช้
+      try {
+        const res = await fetch('/api/admin/users/delete', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token || ''}`,
+          },
+          body: JSON.stringify({ userId: targetProfile.id }),
+        });
+
+        const resData = await res.json();
+        if (res.ok && resData.success) {
+          isSuccess = true;
+        } else {
+          lastErrorMessage = resData.error || '';
+        }
+      } catch (apiErr: any) {
+        lastErrorMessage = apiErr.message;
+      }
+
+      // 2. Fallback: ถ้า API ไม่สำเร็จ ให้ลองเรียกผ่าน Supabase Client ตรงๆ (RPC หรือ DELETE table)
+      if (!isSuccess) {
+        // 2.1 ลองเรียก RPC delete_user_by_admin
+        const { error: rpcError } = await supabase.rpc('delete_user_by_admin', {
+          target_user_id: targetProfile.id,
+        });
+
+        if (!rpcError) {
+          isSuccess = true;
+        } else {
+          // 2.2 ลองลบจากตาราง profiles ตรงๆ
+          const { error: profileError } = await supabase
+            .from('profiles')
+            .delete()
+            .eq('id', targetProfile.id);
+
+          if (!profileError) {
+            isSuccess = true;
+          } else {
+            throw new Error(lastErrorMessage || profileError.message || rpcError.message);
+          }
+        }
+      }
+
+      // นำสมาชิกออกจากรายการ state
+      setProfiles((prev) => prev.filter((p) => p.id !== targetProfile.id));
+
+      setFeedback({
+        type: 'success',
+        message: `ลบบัญชีสมาชิก "${targetProfile.full_name || targetProfile.email}" ออกจากระบบเรียบร้อยแล้ว`,
+      });
+      setDeleteModal(null);
+    } catch (err: any) {
+      console.error('Delete user error:', err);
+      setFeedback({
+        type: 'error',
+        message: `ไม่สามารถลบสมาชิกได้: ${err.message || 'กรุณาลองใหม่อีกครั้งหรือตรวจสอบสิทธิ์'}`,
+      });
+    } finally {
+      setIsDeleting(false);
       setActionLoadingId(null);
     }
   };
@@ -460,36 +553,50 @@ export default function AdminUsersPage() {
                           {isActioning ? (
                             <span className="inline-flex items-center gap-1 text-xs text-purple-600 font-medium">
                               <RefreshCw className="h-3.5 w-3.5 animate-spin" />
-                              กำลังบันทึก...
+                              กำลังดำเนินการ...
                             </span>
                           ) : isSelf ? (
                             <span
                               className="inline-flex items-center gap-1.5 rounded-xl bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-400 cursor-not-allowed border border-slate-200"
-                              title="ไม่สามารถลดระดับสิทธิ์บัญชีของตัวเองได้ เพื่อป้องกันระบบถูกล็อค"
+                              title="บัญชีของคุณที่กำลังใช้งานอยู่"
                             >
                               <Lock className="h-3.5 w-3.5 text-slate-400" />
                               <span>บัญชีของคุณ</span>
                             </span>
-                          ) : isAdmin ? (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmModal({ profile: p, nextRole: 'user' })}
-                              className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors active:scale-95 shadow-2xs"
-                              title="ลดระดับสิทธิ์เป็นสมาชิกลูกค้าทั่วไป"
-                            >
-                              <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
-                              <span>ปรับเป็น User</span>
-                            </button>
                           ) : (
-                            <button
-                              type="button"
-                              onClick={() => setConfirmModal({ profile: p, nextRole: 'admin' })}
-                              className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 px-3 py-1.5 text-xs font-semibold text-white hover:from-purple-700 hover:to-pink-600 transition-all shadow-2xs active:scale-95"
-                              title="แต่งตั้งให้เป็นผู้ดูแลระบบ (Admin)"
-                            >
-                              <ShieldCheck className="h-3.5 w-3.5" />
-                              <span>แต่งตั้งเป็น Admin</span>
-                            </button>
+                            <div className="flex items-center justify-end gap-2">
+                              {isAdmin ? (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmModal({ profile: p, nextRole: 'user' })}
+                                  className="inline-flex items-center gap-1.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-1.5 text-xs font-semibold text-amber-800 hover:bg-amber-100 transition-colors active:scale-95 shadow-2xs"
+                                  title="ลดระดับสิทธิ์เป็นสมาชิกลูกค้าทั่วไป"
+                                >
+                                  <ShieldAlert className="h-3.5 w-3.5 text-amber-600" />
+                                  <span>ปรับเป็น User</span>
+                                </button>
+                              ) : (
+                                <button
+                                  type="button"
+                                  onClick={() => setConfirmModal({ profile: p, nextRole: 'admin' })}
+                                  className="inline-flex items-center gap-1.5 rounded-xl bg-gradient-to-r from-purple-600 to-pink-500 px-3 py-1.5 text-xs font-semibold text-white hover:from-purple-700 hover:to-pink-600 transition-all shadow-2xs active:scale-95"
+                                  title="แต่งตั้งให้เป็นผู้ดูแลระบบ (Admin)"
+                                >
+                                  <ShieldCheck className="h-3.5 w-3.5" />
+                                  <span>แต่งตั้งเป็น Admin</span>
+                                </button>
+                              )}
+
+                              <button
+                                type="button"
+                                onClick={() => setDeleteModal(p)}
+                                className="inline-flex items-center gap-1 rounded-xl border border-rose-200 bg-rose-50 px-2.5 py-1.5 text-xs font-semibold text-rose-700 hover:bg-rose-100 hover:border-rose-300 transition-colors shadow-2xs active:scale-95"
+                                title="ลบบัญชีสมาชิกนี้ออกจากระบบ"
+                              >
+                                <Trash2 className="h-3.5 w-3.5 text-rose-600" />
+                                <span>ลบ</span>
+                              </button>
+                            </div>
                           )}
                         </td>
                       </tr>
@@ -556,6 +663,92 @@ export default function AdminUsersPage() {
                 }`}
               >
                 ยืนยันการเปลี่ยนสิทธิ์
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Delete User Confirmation Modal */}
+      {deleteModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/50 backdrop-blur-xs animate-fade-in">
+          <div className="w-full max-w-md rounded-3xl bg-white p-6 sm:p-7 shadow-2xl border border-slate-100">
+            <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-rose-100 text-rose-600 mb-4">
+              <Trash2 className="h-6 w-6 text-rose-600" />
+            </div>
+
+            <h3 className="text-lg font-bold text-slate-900">
+              ยืนยันการลบสมาชิกออกจากระบบ?
+            </h3>
+
+            <p className="mt-2 text-sm text-slate-600 leading-relaxed">
+              คุณต้องการลบบัญชีผู้ใช้งานรายนี้ออกจากระบบใช่หรือไม่?
+            </p>
+
+            {/* User Target Card */}
+            <div className="mt-4 rounded-2xl border border-slate-200 bg-slate-50 p-4">
+              <div className="flex items-center gap-3">
+                <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-gradient-to-tr from-rose-500 to-pink-500 text-base font-bold text-white shadow-2xs">
+                  {(deleteModal.full_name?.[0] || deleteModal.email?.[0] || 'U').toUpperCase()}
+                </div>
+                <div className="min-w-0 flex-1">
+                  <div className="font-bold text-slate-900 truncate">
+                    {deleteModal.full_name || 'ไม่ระบุชื่อ'}
+                  </div>
+                  <div className="text-xs text-slate-500 truncate flex items-center gap-1 mt-0.5">
+                    <Mail className="h-3 w-3 shrink-0" />
+                    <span>{deleteModal.email}</span>
+                  </div>
+                  <div className="mt-1.5 flex items-center gap-2">
+                    <span className="text-[11px] font-mono text-slate-400">
+                      ID: {deleteModal.id.slice(0, 10)}...
+                    </span>
+                    <span className={`inline-flex items-center rounded-md px-1.5 py-0.5 text-[10px] font-bold ${
+                      deleteModal.role === 'admin'
+                        ? 'bg-purple-100 text-purple-700'
+                        : 'bg-slate-200 text-slate-700'
+                    }`}>
+                      {deleteModal.role === 'admin' ? 'Admin' : 'User'}
+                    </span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Warning Callout */}
+            <div className="mt-4 flex items-start gap-2.5 rounded-2xl border border-rose-200 bg-rose-50/70 p-3.5 text-xs text-rose-900 leading-relaxed">
+              <AlertCircle className="h-4 w-4 text-rose-600 shrink-0 mt-0.5" />
+              <span>
+                <strong>คำเตือน:</strong> การลบนี้เป็นการกระทำถาวรและไม่สามารถย้อนกลับได้ บัญชีผู้ใช้นี้จะถูกลบออกจากระบบและจะไม่สามารถเข้าสู่ระบบได้อีก
+              </span>
+            </div>
+
+            <div className="mt-6 flex items-center justify-end gap-2.5">
+              <button
+                type="button"
+                onClick={() => setDeleteModal(null)}
+                disabled={isDeleting}
+                className="rounded-xl border border-slate-200 px-4 py-2 text-sm font-semibold text-slate-700 hover:bg-slate-50 transition-colors disabled:opacity-50"
+              >
+                ยกเลิก
+              </button>
+              <button
+                type="button"
+                onClick={() => handleDeleteUser(deleteModal)}
+                disabled={isDeleting}
+                className="inline-flex items-center gap-1.5 rounded-xl bg-rose-600 px-4 py-2 text-sm font-semibold text-white shadow-sm hover:bg-rose-700 transition-all active:scale-95 disabled:opacity-50"
+              >
+                {isDeleting ? (
+                  <>
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                    <span>กำลังลบ...</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="h-4 w-4" />
+                    <span>ยืนยันลบสมาชิก</span>
+                  </>
+                )}
               </button>
             </div>
           </div>
