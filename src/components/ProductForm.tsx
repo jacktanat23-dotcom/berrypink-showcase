@@ -3,11 +3,12 @@
 import { useState, useRef } from 'react';
 import Image from 'next/image';
 import { useRouter } from 'next/navigation';
-import { UploadCloud, X, ArrowLeft, Loader2, Image as ImageIcon, AlertCircle } from 'lucide-react';
+import { UploadCloud, X, ArrowLeft, Loader2, Image as ImageIcon, AlertCircle, Sparkles } from 'lucide-react';
 import Link from 'next/link';
 import { Product, ProductFormData, PRODUCT_CATEGORIES, PRODUCT_CONDITIONS, PRODUCT_SIZES } from '@/lib/types';
 import { uploadProductImage, deleteProductImage } from '@/lib/supabase/storage';
 import { createClient, isSupabaseConfigured } from '@/lib/supabase/client';
+import { compressImage, formatBytes } from '@/lib/image-compressor';
 
 interface ProductFormProps {
   initialData?: Product;
@@ -32,12 +33,18 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
   const [selectedFile, setSelectedFile] = useState<File | null>(null);
   const [previewUrl, setPreviewUrl] = useState<string | null>(initialData?.image_url || null);
   const [isSubmitting, setIsSubmitting] = useState(false);
+  const [isCompressing, setIsCompressing] = useState(false);
+  const [compressionInfo, setCompressionInfo] = useState<{
+    original: string;
+    compressed: string;
+    percent: number;
+  } | null>(null);
   const [uploadStatus, setUploadStatus] = useState<string>('');
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
 
   const fileInputRef = useRef<HTMLInputElement>(null);
 
-  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+  const handleFileChange = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0];
     if (!file) return;
 
@@ -47,21 +54,49 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
       return;
     }
 
-    // จำกัดขนาดไฟล์ไม่เกิน 5MB
-    if (file.size > 5 * 1024 * 1024) {
-      setErrorMsg('ขนาดไฟล์ต้องไม่เกิน 5MB');
+    // จำกัดขนาดไฟล์ต้นฉบับไม่เกิน 15MB (ระบบจะช่วยบีบอัดลงเหลือ ~150KB อัตโนมัติ)
+    if (file.size > 15 * 1024 * 1024) {
+      setErrorMsg('ขนาดไฟล์ต้นฉบับต้องไม่เกิน 15MB');
       return;
     }
 
     setErrorMsg(null);
-    setSelectedFile(file);
-    const objectUrl = URL.createObjectURL(file);
-    setPreviewUrl(objectUrl);
+    setIsCompressing(true);
+
+    try {
+      // บีบอัดและปรับขนาดรูปภาพอัตโนมัติในเบราว์เซอร์
+      const compressed = await compressImage(file, {
+        maxWidth: 1200,
+        maxHeight: 1200,
+        quality: 0.82,
+        format: 'image/webp',
+      });
+
+      setSelectedFile(compressed.file);
+      setCompressionInfo({
+        original: formatBytes(compressed.originalSize),
+        compressed: formatBytes(compressed.compressedSize),
+        percent: compressed.savedPercent,
+      });
+
+      const objectUrl = URL.createObjectURL(compressed.file);
+      setPreviewUrl(objectUrl);
+    } catch (err: any) {
+      console.warn('Image compression fallback:', err);
+      // กรณีบีบอัดล้มเหลว ให้ใช้ไฟล์ต้นฉบับตามปกติ
+      setSelectedFile(file);
+      setCompressionInfo(null);
+      const objectUrl = URL.createObjectURL(file);
+      setPreviewUrl(objectUrl);
+    } finally {
+      setIsCompressing(false);
+    }
   };
 
   const handleRemoveImage = () => {
     setSelectedFile(null);
     setPreviewUrl(null);
+    setCompressionInfo(null);
     setFormData((prev) => ({ ...prev, image_url: null }));
     if (fileInputRef.current) {
       fileInputRef.current.value = '';
@@ -188,7 +223,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
             รูปภาพสินค้า (Supabase Storage)
           </label>
           <p className="text-xs text-slate-500 mb-4">
-            รองรับไฟล์ PNG, JPG, WebP สูงสุด 5MB (จะถูกอัปโหลดขึ้น Bucket 'products')
+            รองรับไฟล์ PNG, JPG, WebP สูงสุด 15MB (ระบบจะปรับขนาดและบีบอัดรูปภาพให้โหลดเร็วและประหยัดพื้นที่อัตโนมัติ)
           </p>
 
           <input
@@ -200,35 +235,60 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
           />
 
           {previewUrl ? (
-            <div className="relative group max-w-md overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
-              <div className="relative aspect-[4/3] w-full">
-                <Image
-                  src={previewUrl}
-                  alt="Product preview"
-                  fill
-                  className="object-cover"
-                />
+            <div className="max-w-md">
+              <div className="relative group overflow-hidden rounded-2xl border border-slate-200 bg-slate-50">
+                <div className="relative aspect-[4/3] w-full">
+                  <Image
+                    src={previewUrl}
+                    alt="Product preview"
+                    fill
+                    className="object-cover"
+                  />
+                </div>
+
+                {/* Loading state during compression */}
+                {isCompressing && (
+                  <div className="absolute inset-0 z-20 flex flex-col items-center justify-center bg-white/80 backdrop-blur-xs">
+                    <Loader2 className="h-7 w-7 animate-spin text-indigo-600 mb-2" />
+                    <span className="text-xs font-semibold text-slate-700">กำลังปรับขนาดและบีบอัดรูปภาพ...</span>
+                  </div>
+                )}
+
+                {/* Overlay Actions */}
+                <div className="absolute inset-0 flex items-center justify-center gap-3 bg-slate-900/40 opacity-0 backdrop-blur-xs transition-opacity group-hover:opacity-100">
+                  <button
+                    type="button"
+                    onClick={() => fileInputRef.current?.click()}
+                    className="flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-slate-900 shadow-md hover:bg-slate-100"
+                  >
+                    <ImageIcon className="h-4 w-4" />
+                    เปลี่ยนรูปภาพ
+                  </button>
+                  <button
+                    type="button"
+                    onClick={handleRemoveImage}
+                    className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white shadow-md hover:bg-rose-700"
+                  >
+                    <X className="h-4 w-4" />
+                    ลบรูป
+                  </button>
+                </div>
               </div>
 
-              {/* Overlay Actions */}
-              <div className="absolute inset-0 flex items-center justify-center gap-3 bg-slate-900/40 opacity-0 backdrop-blur-xs transition-opacity group-hover:opacity-100">
-                <button
-                  type="button"
-                  onClick={() => fileInputRef.current?.click()}
-                  className="flex items-center gap-1.5 rounded-xl bg-white px-3.5 py-2 text-xs font-semibold text-slate-900 shadow-md hover:bg-slate-100"
-                >
-                  <ImageIcon className="h-4 w-4" />
-                  เปลี่ยนรูปภาพ
-                </button>
-                <button
-                  type="button"
-                  onClick={handleRemoveImage}
-                  className="flex items-center gap-1.5 rounded-xl bg-rose-600 px-3.5 py-2 text-xs font-semibold text-white shadow-md hover:bg-rose-700"
-                >
-                  <X className="h-4 w-4" />
-                  ลบรูป
-                </button>
-              </div>
+              {/* Compression Info Badge */}
+              {compressionInfo && (
+                <div className="mt-3 flex items-center gap-2 rounded-xl bg-emerald-50 border border-emerald-200/80 px-3.5 py-2.5 text-xs text-emerald-800">
+                  <Sparkles className="h-4 w-4 text-emerald-600 shrink-0" />
+                  <div>
+                    บีบอัดรูปภาพสำเร็จ: <span className="line-through text-slate-400 mr-1">{compressionInfo.original}</span> ➔ <strong className="text-emerald-700">{compressionInfo.compressed}</strong>
+                    {compressionInfo.percent > 0 && (
+                      <span className="ml-1.5 inline-flex items-center rounded-md bg-emerald-100 px-1.5 py-0.5 font-bold text-emerald-800">
+                        ประหยัดพื้นที่ {compressionInfo.percent}%
+                      </span>
+                    )}
+                  </div>
+                </div>
+              )}
             </div>
           ) : (
             <div
@@ -242,7 +302,7 @@ export default function ProductForm({ initialData, isEditMode = false }: Product
                 คลิกเพื่อเลือกรูปภาพ หรือลากไฟล์มาวางที่นี่
               </p>
               <p className="text-xs text-slate-400 mt-1">
-                PNG, JPG, WebP หรือ GIF สูงสุด 5MB
+                PNG, JPG, WebP หรือ GIF สูงสุด 15MB (ระบบจะบีบอัดให้อัตโนมัติ)
               </p>
             </div>
           )}
