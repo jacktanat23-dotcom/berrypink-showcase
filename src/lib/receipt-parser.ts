@@ -23,6 +23,18 @@ export const TRACKING_REGEX =
 export const RECEIVER_PREFIX_REGEX =
   /^(ผู้รับ|receiver|to|ชื่อผู้รับ|ชื่อลูกค้า|cust(omer)?)\s*[:：\-]\s*/i;
 
+/**
+ * ตัดอักขระที่ไม่รองรับใน PostgreSQL text column
+ * โดยเฉพาะ Null byte (\u0000) ที่ติดมาจากฟอนต์หรือสตรีม PDF
+ * ซึ่งเป็นสาเหตุของข้อผิดพลาด "unsupported Unicode escape sequence" (22P05)
+ */
+export function sanitizeUnicode(text: string): string {
+  if (!text) return '';
+  return text
+    .replace(/[\u0000\u0001-\u0008\u000B\u000C\u000E-\u001F\u007F-\u009F\uFFFE\uFFFF]/g, '')
+    .trim();
+}
+
 // Header labels and metadata that should NEVER be treated as customer names
 const HEADER_OR_LABEL_PATTERNS = [
   /^(customer(\s*no)?|address|tax\s*id|tel|e-mail|email|date|time|branch|สาขา|ผู้ส่ง|sender|cashier|staff|pos|bill\s*no|receipt\s*no|เลขที่|วันที่)\s*[:：\-]/i,
@@ -62,7 +74,7 @@ const INLINE_METADATA_STRIP_REGEX =
   /\s*(fuel\s*surcharge|freight\s*charge|weight|size|speed|cod|declared|vat|discount|ค่าขนส่ง|ค่าธรรมเนียม|น้ำหนัก|ขนาด)\s*[:：\-]?\s*[\d,.*a-zA-Z\s\/]*$/i;
 
 export function cleanCustomerName(raw: string): string {
-  let text = raw.trim();
+  let text = sanitizeUnicode(raw);
   if (!text) return '';
 
   // Check if entire line is a header/junk label
@@ -105,8 +117,8 @@ export function cleanCustomerName(raw: string): string {
   text = text.replace(/\u0E4D\u0E32/g, '\u0E33');
   text = text.normalize('NFC');
 
-  // Clean extra spaces
-  text = text.replace(/\s+/g, ' ').trim();
+  // Clean extra spaces and remove any trailing null/control chars
+  text = sanitizeUnicode(text.replace(/\s+/g, ' '));
 
   // If only digits, symbols or punctuation remain, return empty
   if (/^[0-9.,_\-*#= ]*$/.test(text)) return '';
@@ -118,9 +130,10 @@ export function cleanCustomerName(raw: string): string {
  * Parses raw text extracted from a receipt to match customer names with tracking numbers.
  */
 export function parseReceiptText(text: string): ParseReceiptResult {
-  const rawLines = text
+  const cleanInput = sanitizeUnicode(text);
+  const rawLines = cleanInput
     .split('\n')
-    .map((l) => l.trim())
+    .map((l) => sanitizeUnicode(l))
     .filter(Boolean);
 
   const items: ParsedReceiptItem[] = [];
@@ -183,13 +196,13 @@ export function parseReceiptText(text: string): ParseReceiptResult {
 
     usedLineIndices.add(i);
 
-    const finalName = nameParts.join(' ').trim();
+    const finalName = sanitizeUnicode(nameParts.join(' '));
     const isNameIncomplete = !finalName || finalName === 'ไม่ระบุชื่อ' || finalName === '(ยังไม่ระบุชื่อ)';
     items.push({
       name: finalName || 'ไม่ระบุชื่อ',
-      tracking,
+      tracking: sanitizeUnicode(tracking),
       isNameIncomplete,
-      rawSnippet: line,
+      rawSnippet: sanitizeUnicode(line),
     });
   }
 
@@ -197,7 +210,7 @@ export function parseReceiptText(text: string): ParseReceiptResult {
 
   return {
     items,
-    rawText: text,
+    rawText: cleanInput,
     totalDetected: items.length,
     incompleteCount,
   };
@@ -207,7 +220,7 @@ export function parseReceiptText(text: string): ParseReceiptResult {
  * Format parsed items into bulk input text format: "Name Tracking" per line
  */
 export function formatItemsToBulkText(items: ParsedReceiptItem[]): string {
-  return items.map((item) => `${item.name} ${item.tracking}`).join('\n');
+  return items.map((item) => `${sanitizeUnicode(item.name)} ${sanitizeUnicode(item.tracking)}`).join('\n');
 }
 
 /**
@@ -234,7 +247,7 @@ export async function extractTextFromImage(
 
   try {
     const { data } = await worker.recognize(file);
-    return data.text;
+    return sanitizeUnicode(data.text);
   } finally {
     await worker.terminate();
   }
@@ -277,7 +290,12 @@ export async function extractTextFromPdf(
     const textContent = await page.getTextContent();
 
     const items = (textContent.items as any[]) || [];
-    const validItems = items.filter((it) => it.str && it.str.trim().length > 0);
+    const validItems = items
+      .map((it) => ({
+        ...it,
+        str: sanitizeUnicode(it.str || ''),
+      }))
+      .filter((it) => it.str.length > 0);
     if (validItems.length === 0) continue;
 
     // ตรวจสอบว่าหน้านี้มี Header คอลัมน์ Consignee / ผู้รับ หรือไม่ (เพื่อแยก Format A กับ Format B)
@@ -371,7 +389,7 @@ export async function extractTextFromPdf(
     }
   }
 
-  const combinedText = allDocLines.join('\n').trim();
+  const combinedText = sanitizeUnicode(allDocLines.join('\n'));
 
   // If PDF has embedded text with tracking numbers or sufficient text, return it
   if (combinedText.length > 20 && TRACKING_REGEX.test(combinedText)) {

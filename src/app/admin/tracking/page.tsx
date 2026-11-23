@@ -38,6 +38,7 @@ import {
   parseReceiptText,
   formatItemsToBulkText,
   cleanCustomerName,
+  sanitizeUnicode,
   TRACKING_REGEX,
 } from '@/lib/receipt-parser';
 
@@ -152,7 +153,10 @@ export default function AdminTrackingPage() {
   // จัดการ Submit บันทึกทีละรายการ (Create/Update)
   const handleSingleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!formData.customer_name.trim() || !formData.tracking_number.trim()) {
+    const cleanCustomerNameInput = sanitizeUnicode(formData.customer_name);
+    const cleanTrackingInput = sanitizeUnicode(formData.tracking_number);
+
+    if (!cleanCustomerNameInput || !cleanTrackingInput) {
       alert('กรุณากรอกชื่อลูกค้าและเลขพัสดุ');
       return;
     }
@@ -161,11 +165,11 @@ export default function AdminTrackingPage() {
     const supabase = createClient();
 
     const payload = {
-      customer_name: formData.customer_name.trim(),
+      customer_name: cleanCustomerNameInput,
       shipping_date: formData.shipping_date,
       carrier: formData.carrier,
-      tracking_number: formData.tracking_number.trim(),
-      note: formData.note?.trim() || null,
+      tracking_number: cleanTrackingInput,
+      note: formData.note ? sanitizeUnicode(formData.note) || null : null,
       updated_at: new Date().toISOString(),
     };
 
@@ -263,16 +267,17 @@ export default function AdminTrackingPage() {
 
   // แปลงข้อความที่วางในโหมด Bulk Import แบบ Real-time
   useEffect(() => {
-    if (!bulkRawText.trim()) {
+    const cleanBulk = sanitizeUnicode(bulkRawText);
+    if (!cleanBulk) {
       setBulkParsed([]);
       return;
     }
 
-    const lines = bulkRawText.split('\n');
+    const lines = cleanBulk.split('\n');
     const parsed: Array<{ name: string; tracking: string; isWarning?: boolean }> = [];
 
     for (const line of lines) {
-      const trimmed = line.trim();
+      const trimmed = sanitizeUnicode(line);
       if (!trimmed) continue;
 
       let name = '';
@@ -287,8 +292,8 @@ export default function AdminTrackingPage() {
       }
 
       if (parts.length >= 2) {
-        const p0 = parts[0].trim();
-        const p1 = parts[1].trim();
+        const p0 = sanitizeUnicode(parts[0]);
+        const p1 = sanitizeUnicode(parts[1]);
         if (TRACKING_REGEX.test(p0) && !TRACKING_REGEX.test(p1)) {
           tracking = p0;
           name = p1;
@@ -300,22 +305,22 @@ export default function AdminTrackingPage() {
         // แยกด้วยช่องว่าง หรือตรวจจับ tracking pattern
         const trackMatch = trimmed.match(TRACKING_REGEX);
         if (trackMatch) {
-          tracking = trackMatch[1].toUpperCase();
-          const remainder = trimmed.replace(trackMatch[0], '').trim();
+          tracking = sanitizeUnicode(trackMatch[1]).toUpperCase();
+          const remainder = sanitizeUnicode(trimmed.replace(trackMatch[0], ''));
           name = remainder;
         } else {
           const lastSpaceIdx = trimmed.lastIndexOf(' ');
           if (lastSpaceIdx !== -1) {
-            name = trimmed.slice(0, lastSpaceIdx).trim();
-            tracking = trimmed.slice(lastSpaceIdx + 1).trim();
+            name = sanitizeUnicode(trimmed.slice(0, lastSpaceIdx));
+            tracking = sanitizeUnicode(trimmed.slice(lastSpaceIdx + 1));
           } else {
-            tracking = trimmed;
+            tracking = sanitizeUnicode(trimmed);
           }
         }
       }
 
       if (tracking) {
-        const cleanedName = cleanCustomerName(name) || name.trim();
+        const cleanedName = cleanCustomerName(name) || sanitizeUnicode(name);
         const isWarning =
           !cleanedName ||
           cleanedName === 'ไม่ระบุชื่อ' ||
@@ -323,12 +328,12 @@ export default function AdminTrackingPage() {
           cleanedName.includes('กรุณาระบุ');
         parsed.push({
           name: cleanedName || '(ยังไม่ระบุชื่อ)',
-          tracking,
+          tracking: sanitizeUnicode(tracking),
           isWarning,
         });
       } else if (name) {
         parsed.push({
-          name,
+          name: sanitizeUnicode(name),
           tracking: '(ยังไม่ระบุเลข)',
           isWarning: true,
         });
@@ -478,10 +483,10 @@ export default function AdminTrackingPage() {
     const supabase = createClient();
 
     const payloads = bulkParsed.map((item) => ({
-      customer_name: item.name,
+      customer_name: sanitizeUnicode(item.name),
       shipping_date: bulkDate,
       carrier: bulkCarrier,
-      tracking_number: item.tracking,
+      tracking_number: sanitizeUnicode(item.tracking),
       note: null,
     }));
 
